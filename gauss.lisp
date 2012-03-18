@@ -54,4 +54,10 @@ f_s  = 2 arg/s f
 		     (expt (- y y0) 2)))))))
 
 (sb-alien::define-alien-callback bla sb-alien:double ((x sb-alien:double))
-  (* x x))
+  (* 12d0))
+
+(sb-alien:load-shared-object "/home/martin/0316/cl-gaussfit/lib1.so")
+
+(define-alien-routine fun sb-alien:double (fptr (* int)))
+
+(fun (sb-alien:alien-sap bla))
