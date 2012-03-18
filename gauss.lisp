@@ -1,5 +1,16 @@
 #|
-jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)],[xx,yy,a,b,sigma]);
+jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
+dx = x-xx
+dy = y-yy
+s2 = 1/s^2
+arg = -(dx^2+dy^2) s2
+e = exp(arg)
+f(x) = a e + b
+f_xx = 2 dx s2 f
+f_yy = 2 dy s2 f
+f_a  = e
+f_b  = 1
+f_s  = 2 arg/s f
 
                [                          2           2 ]
                [                - (y - yy)  - (x - xx)  ]
