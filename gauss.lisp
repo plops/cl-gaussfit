@@ -11,40 +11,6 @@ f_yy = 2 dy s2 f
 f_a  = e
 f_b  = 1
 f_s  = 2 arg/s f
-
-               [                          2           2 ]
-               [                - (y - yy)  - (x - xx)  ]
-               [                ----------------------- ]
-               [                             2          ]
-(%o1)  Col 1 = [                        sigma           ]
-               [ 2 a (x - xx) %e                        ]
-               [ -------------------------------------- ]
-               [                      2                 ]
-               [                 sigma                  ]
-         [                          2           2 ]
-         [                - (y - yy)  - (x - xx)  ]
-         [                ----------------------- ]
-         [                             2          ]
- Col 2 = [                        sigma           ]
-         [ 2 a (y - yy) %e                        ]
-         [ -------------------------------------- ]
-         [                      2                 ]
-         [                 sigma                  ]
-         [             2           2 ]
-         [   - (y - yy)  - (x - xx)  ]
- Col 3 = [   ----------------------- ] Col 4 = [ 1 ]
-         [                2          ]
-         [           sigma           ]
-         [ %e                        ]
-         [                                             2           2 ]
-         [                                   - (y - yy)  - (x - xx)  ]
-         [                                   ----------------------- ]
-         [                                                2          ]
- Col 5 = [                  2           2            sigma           ]
-         [   2 a (- (y - yy)  - (x - xx) ) %e                        ]
-         [ - ------------------------------------------------------- ]
-         [                                3                          ]
-         [                           sigma                           ]
 |#
 
 (defun g (x y x0 y0 a b)
@@ -61,3 +27,31 @@ f_s  = 2 arg/s f
 (define-alien-routine fun sb-alien:double (fptr (* int)))
 
 (fun (sb-alien:alien-sap bla))
+
+(load-shared-object "/usr/lib/libminpack.so")
+
+(define-alien-routine lmder1_ void
+  (fcn (* int)) ; callback
+  (m (* int)) ; 1
+  (n (* int)) ; 1
+  (x (* double)) ; n
+  (fvec (* double)) ; m
+  (fjac (* double)) ; ldfjac,n 
+  (ldfjac (* int)) ; 1
+  (tol (* double)) ; 1
+  (info (* int)) ; 1
+  (ipvt (* int)) ; n
+  (wa (* double)) ; lwa
+  (lwa (* int))) ; 1
+
+(sb-alien::define-alien-callback fcn
+    void
+    ((m (* int)) ; 1
+     (n (* int)) ; 1
+     (x (* double)) ; n
+     (fvec (* double)) ; m
+     (fjac (* double)) ; ldfjac,n
+     (ldfjac (* int)) ; 1
+     (iflag (* int))) ; 1
+  (values))
+
