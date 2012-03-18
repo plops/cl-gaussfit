@@ -31,6 +31,9 @@ f_s  = 2 arg/s f
      (fjac (* double)) ; ldfjac,n
      (ldfjac (* int)) ; 1  
      (iflag (* int))) ; 1 1: fvec, 2: fjac
+  ;; y_i - (a + u_i / (v_i*b + w_i * c)) with i = 1..15   
+  ;; x=(a,b,c)
+  ;; u_i = i, v_i = 16-i, w_i = min(u_i,v_i)
   (let ((y (make-array 15 :element-type 'double-float
 		       :initial-contents
 		       (mapcar #'(lambda (x) (* 1d0 x))
@@ -39,28 +42,28 @@ f_s  = 2 arg/s f
     (format t "bla ~a ~%" (list (deref iflag 0)
 				(loop for i below 3 collect (deref x i))))
     (ecase (deref iflag 0)
-      (1 (dotimes (i 15)
+      (1 (loop for i from 1 upto 15 do
 	   (let* ((t1 i)
-		  (t2 (- 15 i))
-		  (t3 (if (< i 8) t1 t2)))
-	     (setf (deref fvec i) 
-		   (- (aref y i)
+		  (t2 (- 16 i))
+		  (t3 (if (<= i 8) t1 t2)))
+	     (setf (deref fvec (- i 1)) 
+		   (- (aref y (- i 1))
 		      (+ (deref x 0)
 			 (/ t1 (+ (* (deref x 1) t2)
 				  (* (deref x 2) t3)))))))))
       (2 (let ((w (deref ldfjac 0))) 
-	   (dotimes (i 15)
+	   (loop for i from 1 upto 15 do
 	     (let*  ((t1 i)
-		     (t2 (- 15 i))
-		     (t3 (if (< i 8) t1 t2))
+		     (t2 (- 16 i))
+		     (t3 (if (<= i 8) t1 t2))
 		     (t4 (expt (+ (* (deref x 1) t2)
 				  (* (deref x 2) t3))
 			       2)))
 	       (macrolet ((f (a b)
 			    `(deref fjac (+ ,a (* w ,b)))))
-		(setf (f i 0) -1d0
-		      (f i 1) (/ (* t1 t2) t4)
-		      (f i 2) (/ (* t1 t3) t4)))))))))  
+		(setf (f (- i 1) 0) -1d0
+		      (f (- i 1) 1) (/ (* t1 t2) t4)
+		      (f (- i 1) 2) (/ (* t1 t3) t4)))))))))  
   (values))
 
 
@@ -98,14 +101,14 @@ f_s  = 2 arg/s f
 			  :element-type '(signed-byte 64)
 			  :initial-element 0))
 	(tol (sqrt double-float-epsilon)))
-   (sb-sys:without-gcing
-    (sb-sys:with-pinned-objects (x  wa fvec fjac ipvt)
-      (labels ((a (ar)
-		 (sb-sys:vector-sap 
-		  (sb-ext:array-storage-vector
-		   ar))))
-	(lmder1_ (alien-sap fcn) m n (a x) (a fvec) (a fjac) ldfjac tol
-		 (a ipvt) (a wa) lwa))))))
+   (sb-sys:with-pinned-objects (x  wa fvec fjac ipvt)
+     (labels ((a (ar)
+		(sb-sys:vector-sap 
+		 (sb-ext:array-storage-vector
+		  ar))))
+       (lmder1_ (alien-sap fcn) m n (a x) (a fvec) (a fjac) ldfjac tol
+		(a ipvt) (a wa) lwa)))
+   (format t "~a ~%" (reduce #'(lambda (x y) (+ x (* y y))) fvec))))
 
 #+nil
 (time (run))
