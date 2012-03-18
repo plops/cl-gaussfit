@@ -37,8 +37,34 @@ f_s  = 2 arg/s f
      (x (* double)) ; n
      (fvec (* double)) ; m
      (fjac (* double)) ; ldfjac,n
-     (ldfjac (* int)) ; 1
+     (ldfjac (* int)) ; 1  
      (iflag (* int))) ; 1 1: fvec, 2: fjac
+  (let ((y (make-array 15 :element-type 'double-float
+		       :initial-contents
+		       (mapcar #'(lambda (x) (* 1d0 x))
+			       '(.14 .18 .22 .25 .29 .32 .35 .39
+				 .37 .58 .73 .96 1.34 2.1 4.39)))))
+    (ecase (deref iflag 0)
+      (1 (dotimes (i 15)
+	   (let* ((t1 i)
+		  (t2 (- 15 i))
+		  (t3 (if (< i 8) t1 t2)))
+	     (setf (deref fvec i) 
+		   (- (aref y i)
+		      (+ (deref x 0)
+			 (/ t1 (+ (* (deref x 1) t2)
+				  (* (deref x 2) t3)))))))))
+      (2 (let ((w (deref ldfjac 0))) 
+	   (dotimes (i 15)
+	     (let*  ((t1 i)
+		     (t2 (- 15 i))
+		     (t3 (if (< i 8) t1 t2))
+		     (t4 (expt (+ (* (deref x 1) t2)
+				  (* (deref x 2) t3))
+			       2)))
+	       (setf (deref fjac (+ 0 (* w i))) -1d0
+		     (deref fjac (+ 1 (* w i))) (/ (* t1 t2) t4)
+		     (deref fjac (+ 2 (* w i))) (/ (* t1 t3) t4))))))))  
   (values))
 
 
@@ -62,11 +88,7 @@ f_s  = 2 arg/s f
 
 (let* ((m 15)
        (n 3)
-       (y (make-array 15 :element-type 'double-float
-		      :initial-contents
-			(mapcar #'(lambda (x) (* 1d0 x))
-				'(.14 .18 .22 .25 .29 .32 .35 .39
-				  .37 .58 .73 .96 1.34 2.1 4.39))))
+       
        (x (make-array n :element-type 'double-float
 		      :initial-element 1d0))
        (ldfjac 15)
@@ -82,7 +104,7 @@ f_s  = 2 arg/s f
 			 :element-type '(signed-byte 64)
 			 :initial-element 0))
        (tol (sqrt double-float-epsilon)))
-  (sb-sys:with-pinned-objects (x y wa fvec fjac ipvt)
+  (sb-sys:with-pinned-objects (x  wa fvec fjac ipvt)
     (labels ((a (ar)
 	       (sb-sys:vector-sap 
 		(sb-ext:array-storage-vector
