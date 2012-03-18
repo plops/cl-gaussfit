@@ -52,3 +52,6 @@ f_s  = 2 arg/s f
    (* a (/ 2 pi)
       (exp (* -.5 (+ (expt (- x x0) 2)
 		     (expt (- y y0) 2)))))))
+
+(sb-alien::define-alien-callback bla sb-alien:double ((x sb-alien:double))
+  (* x x))
