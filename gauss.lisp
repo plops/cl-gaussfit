@@ -30,20 +30,6 @@ f_s  = 2 arg/s f
 
 (load-shared-object "/usr/lib/libminpack.so")
 
-(define-alien-routine lmder1_ void
-  (fcn (* int)) ; callback
-  (m (* int)) ; 1
-  (n (* int)) ; 1
-  (x (* double)) ; n
-  (fvec (* double)) ; m
-  (fjac (* double)) ; ldfjac,n 
-  (ldfjac (* int)) ; 1
-  (tol (* double)) ; 1
-  (info (* int)) ; 1
-  (ipvt (* int)) ; n
-  (wa (* double)) ; lwa
-  (lwa (* int))) ; 1
-
 (sb-alien::define-alien-callback fcn
     void
     ((m (* int)) ; 1
@@ -52,6 +38,54 @@ f_s  = 2 arg/s f
      (fvec (* double)) ; m
      (fjac (* double)) ; ldfjac,n
      (ldfjac (* int)) ; 1
-     (iflag (* int))) ; 1
+     (iflag (* int))) ; 1 1: fvec, 2: fjac
   (values))
 
+
+(define-alien-routine lmder1_ void
+  (fcn (* int)) ; callback
+  (m int :copy) ; 1 input
+  (n int :copy) ; 1
+  (x (* double))			; n in/out
+  (fvec (* double)) ; m out
+  (fjac (* double)) ; ldfjac,n out 
+  (ldfjac int :copy) ; 1  in
+  (tol double :copy) ; 1 in
+  (info int :out) ; 1 out
+  (ipvt (* int)) ; n out
+  (wa (* double)) ; lwa out
+  (lwa int :copy)) ; 1 in
+
+#+nil
+(lmder_ fcn )
+
+
+(let* ((m 15)
+       (n 3)
+       (y (make-array 15 :element-type 'double-float
+		      :initial-contents
+			(mapcar #'(lambda (x) (* 1d0 x))
+				'(.14 .18 .22 .25 .29 .32 .35 .39
+				  .37 .58 .73 .96 1.34 2.1 4.39))))
+       (x (make-array n :element-type 'double-float
+		      :initial-element 1d0))
+       (ldfjac 15)
+       (lwa (+ m (* 5 n)))
+       (wa (make-array lwa :element-type 'double-float
+		       :initial-element 0d0))
+       (fvec (make-array m :element-type 'double-float
+			 :initial-element 0d0))
+       (fjac (make-array (list ldfjac n) 
+			 :element-type 'double-float
+			 :initial-element 0d0))
+       (ipvt (make-array n
+			 :element-type '(signed-byte 64)
+			 :initial-element 0))
+       (tol (sqrt double-float-epsilon)))
+  (sb-sys:with-pinned-objects (x y wa fvec fjac ipvt)
+    (labels ((a (ar)
+	       (sb-sys:vector-sap 
+		(sb-ext:array-storage-vector
+		 ar))))
+     (lmder1_ (alien-sap fcn) m n (a x) (a fvec) (a fjac) ldfjac tol
+	      (a ipvt) (a wa) lwa))))
