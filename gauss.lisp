@@ -19,14 +19,6 @@ f_s  = 2 arg/s f
       (exp (* -.5 (+ (expt (- x x0) 2)
 		     (expt (- y y0) 2)))))))
 
-(sb-alien::define-alien-callback bla sb-alien:double ((x sb-alien:double))
-  (* 12d0))
-
-(sb-alien:load-shared-object "/home/martin/0316/cl-gaussfit/lib1.so")
-
-(define-alien-routine fun sb-alien:double (fptr (* int)))
-
-(fun (sb-alien:alien-sap bla))
 
 (load-shared-object "/usr/lib/libminpack.so")
 
@@ -44,6 +36,8 @@ f_s  = 2 arg/s f
 		       (mapcar #'(lambda (x) (* 1d0 x))
 			       '(.14 .18 .22 .25 .29 .32 .35 .39
 				 .37 .58 .73 .96 1.34 2.1 4.39)))))
+    (format t "bla ~a ~%" (list (deref iflag 0)
+				(loop for i below 3 collect (deref x i))))
     (ecase (deref iflag 0)
       (1 (dotimes (i 15)
 	   (let* ((t1 i)
@@ -62,9 +56,11 @@ f_s  = 2 arg/s f
 		     (t4 (expt (+ (* (deref x 1) t2)
 				  (* (deref x 2) t3))
 			       2)))
-	       (setf (deref fjac (+ 0 (* w i))) -1d0
-		     (deref fjac (+ 1 (* w i))) (/ (* t1 t2) t4)
-		     (deref fjac (+ 2 (* w i))) (/ (* t1 t3) t4))))))))  
+	       (macrolet ((f (a b)
+			    `(deref fjac (+ ,a (* w ,b)))))
+		(setf (f i 0) -1d0
+		      (f i 1) (/ (* t1 t2) t4)
+		      (f i 2) (/ (* t1 t3) t4)))))))))  
   (values))
 
 
@@ -82,32 +78,34 @@ f_s  = 2 arg/s f
   (wa (* double)) ; lwa out
   (lwa int :copy)) ; 1 in
 
-#+nil
-(lmder_ fcn )
 
-
-(let* ((m 15)
-       (n 3)
+(defun run ()
+ (let* ((m 15)
+	(n 3)
        
-       (x (make-array n :element-type 'double-float
-		      :initial-element 1d0))
-       (ldfjac 15)
-       (lwa (+ m (* 5 n)))
-       (wa (make-array lwa :element-type 'double-float
-		       :initial-element 0d0))
-       (fvec (make-array m :element-type 'double-float
-			 :initial-element 0d0))
-       (fjac (make-array (list ldfjac n) 
-			 :element-type 'double-float
-			 :initial-element 0d0))
-       (ipvt (make-array n
-			 :element-type '(signed-byte 64)
-			 :initial-element 0))
-       (tol (sqrt double-float-epsilon)))
-  (sb-sys:with-pinned-objects (x  wa fvec fjac ipvt)
-    (labels ((a (ar)
-	       (sb-sys:vector-sap 
-		(sb-ext:array-storage-vector
-		 ar))))
-     (lmder1_ (alien-sap fcn) m n (a x) (a fvec) (a fjac) ldfjac tol
-	      (a ipvt) (a wa) lwa))))
+	(x (make-array n :element-type 'double-float
+		       :initial-element 1d0))
+	(ldfjac 15)
+	(lwa (+ m (* 5 n)))
+	(wa (make-array lwa :element-type 'double-float
+			:initial-element 0d0))
+	(fvec (make-array m :element-type 'double-float
+			  :initial-element 0d0))
+	(fjac (make-array (list ldfjac n) 
+			  :element-type 'double-float
+			  :initial-element 0d0))
+	(ipvt (make-array n
+			  :element-type '(signed-byte 64)
+			  :initial-element 0))
+	(tol (sqrt double-float-epsilon)))
+   (sb-sys:without-gcing
+    (sb-sys:with-pinned-objects (x  wa fvec fjac ipvt)
+      (labels ((a (ar)
+		 (sb-sys:vector-sap 
+		  (sb-ext:array-storage-vector
+		   ar))))
+	(lmder1_ (alien-sap fcn) m n (a x) (a fvec) (a fjac) ldfjac tol
+		 (a ipvt) (a wa) lwa))))))
+
+#+nil
+(time (run))
