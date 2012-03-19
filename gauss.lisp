@@ -100,13 +100,15 @@ f_s  = - 2 arg/s ff
   (destructuring-bind (h w) (array-dimensions *img*)
     (let* ((m (* h w))
 	   (n (length x))
-	   (jac (make-array (list n m) :element-type 'double-float))
+	   ;(jac (make-array (list n m) :element-type 'double-float))
+	   (res (make-array n :element-type 'double-float
+			    :initial-element 0d0))
 	   (xx (aref x 0))
 	   (yy (aref x 1))
 	   (a (aref x 2))
 	   (s (aref x 4)))
-      (macrolet ((f (a b)
-		   `(aref jac ,b ,a)))
+      (labels ((icf (a v)
+		 (incf (aref res a) (* v v))))
        (dotimes (j h)
 	 (dotimes (i w)
 	   (let* ((dx (- (* 1d0 i) xx))
@@ -122,12 +124,19 @@ f_s  = - 2 arg/s ff
 		  (fs (/ (* -2 arg f)
 			 s))
 		  (p (+ i (* w j)))) ;; i (width) is the fast index
-	     (setf (f p 0) fxx 
+	     #+nil(setf (f p 0) fxx 
 		   (f p 1) fyy
 		   (f p 2) fa
 		   (f p 3) fb
-		   (f p 4) fs)))))
-     jac)))
+		   (f p 4) fs)
+	     (icf 0 fxx)
+	     (icf 1 fyy)
+	     (icf 2 fa)
+	     (icf 3 fb)
+	     (icf 4 fs))))
+       (dotimes (i n)
+	 (setf (aref res i) (sqrt (aref res i))))
+       res))))
 
 
 
@@ -186,10 +195,11 @@ f_s  = - 2 arg/s ff
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
      
-     (defparameter *fjac2* (calc-fjac x))
+     (defparameter *fjnorm* (calc-fjac x))
      (let ((fnorm (norm fvec))
 	   (fjnorm (make-array n :element-type 'double-float))
 	   (eps .05))
+       
        ;; |x_i - x*_i| <= s_i    with x_j = x*_j for j/=i
        ;; implies that:
        ;; ||F(x)|| <= (1+eps) ||F(x*)||
@@ -200,7 +210,8 @@ f_s  = - 2 arg/s ff
 	   ;; fjac contains upper triangular matrix R
 	   (setf (aref fjnorm l) 
 		 (norm (loop for i upto j
-			  collect (aref fjac i j))))))
+			  collect (aref fjac j i))))))
+      (format t "fjnorms ~a" (list *fjnorm* fjnorm))
       #+nil(format t "~a ~%" 
 	      (list 'fvec fnorm
 		    'ipvt ipvt
@@ -224,7 +235,10 @@ f_s  = - 2 arg/s ff
       (format t "~{~7,3f~}~%" *res*)
       (defparameter *fjac* fjac)))))
 #+NIL
-(run2)
+(progn
+  (setf *rand* .01)
+  (fill-img)
+  (run2))
 
 (progn
   (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
