@@ -20,6 +20,7 @@
 	   (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
      a)))
 
+;; load the data and swap endian
 (defparameter *imgs*
   (with-open-file (s "example-movie_small5.raw"
 		     :direction :input
@@ -34,6 +35,7 @@
 			     (* 256 (ldb (byte 8 0) (aref a i))))))
       b)))
 
+;; calculate average over each image
 (defparameter *imgs-avg*
   (destructuring-bind (z y x) (array-dimensions *imgs*)
     (loop for k below z collect
@@ -43,6 +45,7 @@
 	       (incf sum (aref *imgs* k j i))))
 	   sum))))
 
+;; accumulate histograms of the averages to determine which images have events
 (defparameter *imgs-avg-hist*
  (let* ((ma (1+ (reduce #'max *imgs-avg*)))
 	(n 10)
@@ -51,22 +54,29 @@
      (incf (aref hist (floor (* n e) ma))))
    hist))
 
-(time
- (defparameter *imgs-with-event*
-   (let ((ma (1+ (reduce #'max *imgs-avg*))))
-     (loop for k below (length *imgs-avg*)
-	when (< .4 (/ (elt *imgs-avg* k)
-		      ma))
-	collect
-	(list k (elt *imgs-avg* k))))))
+;; select images with bright events
+(defparameter *imgs-with-event*
+  (let ((ma (1+ (reduce #'max *imgs-avg*))))
+    (loop for k from 0 and e in *imgs-avg* 
+       when (< .4 (/ e	ma))
+       collect k)))
 
-(time
- (defparameter *imgs-with-event*
-   (let ((ma (1+ (reduce #'max *imgs-avg*))))
-     (loop for k from 0 and e in *imgs-avg* 
-	when (< .4 (/ e	ma))
-	collect
-	(list k e)))))
+(defun uniq (ls)
+  (let ((old nil))
+   (loop for e in ls
+      unless (and old
+		  (= old e))
+      collect (progn (setf old e) e))))
+
+;; select 3 preceding and 3 following images for each event
+(defparameter *imgs-more-events*
+ (let ((r ()))
+   (dolist (e *imgs-with-event*)
+     (loop for i from (- e 3) upto (+ e 3) do
+	  (push i r)))
+   (uniq (sort r #'<))))
+
+
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
