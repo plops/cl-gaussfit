@@ -1,3 +1,19 @@
+(defun g (x y x0 y0 a b s)
+  (let* ((dx (- x x0))
+	 (dy (- y y0))
+	 (s2 (/ (* s s)))
+	 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+	 (e (exp arg)))
+    (+ b (* a e))))
+
+(defparameter *img*
+ (let ((a (make-array '(8 8) :element-type 'double-float)))
+   (destructuring-bind (h w) (array-dimensions a)
+     (dotimes (j h)
+       (dotimes (i w)
+	 (setf (aref a j i) (g i j 4.3d0 4.3d0 7d0 3d0 2d0)))))
+   a))
+
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
 dx = x-xx
@@ -13,11 +29,64 @@ f_b  = 1
 f_s  = 2 arg/s f
 |#
 
-(defun g (x y x0 y0 a b)
-  (+ b
-   (* a (/ 2 pi)
-      (exp (* -.5 (+ (expt (- x x0) 2)
-		     (expt (- y y0) 2)))))))
+
+(sb-alien::define-alien-callback fcn2
+    void
+    ((m (* int)) ; = 8x8 or similar
+     (n (* int)) ; = 5
+     (x (* double)) ; [xx,yy,a,b,sigma]
+     (fvec (* double)) ; m
+     (fjac (* double)) ; ldfjac,n
+     (ldfjac (* int)) ; 1  
+     (iflag (* int))) ; 1 1: fvec, 2: fjac
+  (destructuring-bind (h w) (array-dimensions *img*)
+    (let* ((xx (deref x 0))
+	   (yy (deref x 1))
+	   (a (deref x 2))
+	   (b (deref x 3))
+	   (s (deref x 4))) 
+      (format t "bla ~a ~%" (list (deref iflag 0)
+				  (loop for i below 5 collect (deref x i))))
+      (ecase (deref iflag 0)
+	(1 (dotimes (j h)
+	     (dotimes (i w)
+	       (let* ((dx (- i xx))
+		      (dy (- j yy))
+		      (s2 (/ (* s s)))
+		      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+		      (e (exp arg)))
+		 (+ (- (aref *img* j i)) b (* a e))))))
+	(2 (let ((ww (deref ldfjac 0)))
+	     (macrolet ((f (a b)
+			  `(deref fjac (+ ,a (* ww ,b)))))
+	       (dotimes (j h)
+		 (dotimes (i w)
+		   ;; f_xx = 2 dx s2 f
+		   ;; f_yy = 2 dy s2 f
+		   ;; f_a  = e
+		   ;; f_b  = 1
+		   ;; f_s  = 2 arg/s f	
+		   (let* ((dx (- i xx))
+			 (dy (- j yy))
+			 (s2 (/ (* s s)))
+			 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+			 (e (exp arg))
+			 (f (+ b (* e a)))
+			 (fxx (* 2 dx s2 f))
+			 (fyy (* 2 dy s2 f))
+			 (fa e)
+			 (fb 1)
+			 (fs (/ (* 2 arg f)
+				s))
+			 (p (+ i (* w j))))
+		     (setf (f p 0) fxx
+			   (f p 1) fyy
+			   (f p 2) fa
+			   (f p 3) fb
+			   (f p 4) fs))))))))))  
+  (values))
+
+
 
 
 (load-shared-object "/usr/lib/libminpack.so")
