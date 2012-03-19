@@ -8,11 +8,11 @@
     (+ b (* a e))))
 
 (defparameter *img*
- (let ((a (make-array '(16 16) :element-type 'double-float)))
+ (let ((a (make-array '(5 5) :element-type 'double-float)))
    (destructuring-bind (h w) (array-dimensions a)
      (dotimes (j h)
        (dotimes (i w)
-	 (setf (aref a j i) (g i j 8.3d0 8.5d0 .7d0 .005d0 3d0)))))
+	 (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
    a))
 
 #|
@@ -139,14 +139,14 @@ f_s  = - 2 arg/s ff
 	  (x (make-array n :element-type 'double-float
 			 :initial-contents
 			 (mapcar #'(lambda (x) (* 1d0 x))
-				 '(8 8 1 1 1))))
+				 '(2 2 1 1 1))))
 	  (ldfjac m)
 	  (lwa (+ m (* 5 n)))
 	  (wa (make-array lwa :element-type 'double-float
 			  :initial-element 0d0))
 	  (fvec (make-array m :element-type 'double-float
 			    :initial-element 0d0))
-	  (fjac (make-array (list ldfjac n) 
+	  (fjac (make-array (list n ldfjac) 
 			    :element-type 'double-float
 			    :initial-element 0d0))
 	  (ipvt (make-array n
@@ -160,9 +160,22 @@ f_s  = - 2 arg/s ff
 		    ar))))
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
-     (format t "~a ~%" 
-	     (list 'fvec (reduce #'(lambda (x y) (+ x (* y y))) fvec)
-		   'ipvt ipvt
-		   )))))
+     (let ((fnorm (reduce #'(lambda (x y) (+ x (* y y))) fvec))
+	   (fjnorm (make-array n :element-type 'double-float)))
+       #+nil(dotimes (j n)
+	 (let ((l (- (aref ipvt j) 1)))
+	   (setf (aref fjnorm l) 
+		 (reduce #'(lambda (x y) (+ x (* y y)))
+			 ))))
+       (format t "~a ~%" 
+	       (list 'fvec fnorm
+		     'ipvt ipvt))
+       (defparameter *fjac* fjac)))))
 #+NIL
 (run2)
+
+(destructuring-bind (h w) (array-dimensions *fjac*)
+  (dotimes (j h)
+    (dotimes (i w)
+      (format t "~5,2f " (aref *fjac* j i)))
+    (terpri))) 
