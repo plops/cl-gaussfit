@@ -95,6 +95,40 @@ f_s  = - 2 arg/s ff
   (values))
 
 
+(defun calc-fjac (x)
+  "m rows, n cols"
+  (destructuring-bind (h w) (array-dimensions *img*)
+    (let* ((m (* h w))
+	   (n (length x))
+	   (jac (make-array (list n m) :element-type 'double-float))
+	   (xx (aref x 0))
+	   (yy (aref x 1))
+	   (a (aref x 2))
+	   (s (aref x 4)))
+      (macrolet ((f (a b)
+		   `(aref jac ,b ,a)))
+       (dotimes (j h)
+	 (dotimes (i w)
+	   (let* ((dx (- (* 1d0 i) xx))
+		  (dy (- (* 1d0 j) yy))
+		  (s2 (/ (* s s)))
+		  (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+		  (e (exp arg))
+		  (f (* e a))
+		  (fxx (* 2 dx s2 f))
+		  (fyy (* 2 dy s2 f))
+		  (fa e)
+		  (fb 1d0)
+		  (fs (/ (* -2 arg f)
+			 s))
+		  (p (+ i (* w j)))) ;; i (width) is the fast index
+	     (setf (f p 0) fxx 
+		   (f p 1) fyy
+		   (f p 2) fa
+		   (f p 3) fb
+		   (f p 4) fs)))))
+     jac)))
+
 
 
 (load-shared-object "/usr/lib/libminpack.so")
@@ -151,6 +185,8 @@ f_s  = - 2 arg/s ff
 		    ar))))
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
+     
+     (defparameter *fjac2* (calc-fjac x))
      (let ((fnorm (norm fvec))
 	   (fjnorm (make-array n :element-type 'double-float))
 	   (eps .05))
@@ -193,7 +229,7 @@ f_s  = - 2 arg/s ff
 (progn
   (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
   (let* ((nj 30)
-	 (n 20)
+	 (n 100)
 	 (h (make-array (list nj n 11) ;; fast: rand x y a b s sx sy sa sb ss 
 			:element-type 'double-float)))
     (dotimes (j nj)
@@ -203,7 +239,7 @@ f_s  = - 2 arg/s ff
 	(run2)
 	(loop for k below (length *res*) do
 	     (setf (aref h j i k) (elt *res* k)))))
-    (defparameter *scan3t* h)))
+    (defparameter *scan4* h)))
 
 (with-open-file (s "/dev/shm/o.gp" :direction :output :if-does-not-exist :create
 		   :if-exists :supersede)
@@ -218,7 +254,7 @@ f_s  = - 2 arg/s ff
 		   :if-exists :supersede)
  (format 
   s "~{~{~a ~}~%~}~%"
-  (let ((a *scan3*))
+  (let ((a *scan4*))
     (destructuring-bind (nj n ne) (array-dimensions a)
       (loop for j below nj collect
 	   (append (list (format nil "~3f" (aref a j 0 0)))
@@ -247,10 +283,13 @@ f_s  = - 2 arg/s ff
 			   (stat 3) (st 8) (stat 4) (st 9) 
 			   (stat 5) (st 10))))))))) o
 
+;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
 
 #+nil
-(destructuring-bind (h w) (array-dimensions *fjac*)
-  (dotimes (j h)
-    (dotimes (i w)
-      (format t "~5,2f " (aref *fjac* j i)))
-    (terpri))) 
+(let ((jac *fjac2*))
+  (terpri)
+ (destructuring-bind (h w) (array-dimensions jac)
+   (dotimes (j h)
+     (dotimes (i w)
+       (format t "~5,3f " (aref jac j i)))
+     (terpri)))) 
