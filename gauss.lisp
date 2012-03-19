@@ -54,8 +54,10 @@ f_s  = 2 arg/s f
 		      (dy (- (* 1d0 j) yy))
 		      (s2 (/ (* s s)))
 		      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-		      (e (exp arg)))
-		 (+ (- (aref *img* j i)) b (* a e))))))
+		      (e (exp arg))
+		      (p (+ i (* w j))))
+		 (setf (deref fvec p)
+		       (+ (- (aref *img* j i)) b (* a e)))))))
 	(2 (let ((ww (deref ldfjac 0)))
 	     (macrolet ((f (a b)
 			  `(deref fjac (+ ,a (* ww ,b)))))
@@ -187,7 +189,9 @@ f_s  = 2 arg/s f
    (let* ((m (* h w))
 	  (n 5)
 	  (x (make-array n :element-type 'double-float
-			 :initial-element 1d0))
+			 :initial-contents
+			 (mapcar #'(lambda (x) (* 1d0 x))
+				 '(4 4 1 1 2))))
 	  (ldfjac m)
 	  (lwa (+ m (* 5 n)))
 	  (wa (make-array lwa :element-type 'double-float
@@ -209,5 +213,5 @@ f_s  = 2 arg/s f
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
      (format t "~a ~%" (reduce #'(lambda (x y) (+ x (* y y))) fvec)))))
-
-(time (run2))
+#+NIL
+(run2)
