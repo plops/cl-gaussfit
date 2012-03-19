@@ -50,8 +50,8 @@ f_s  = 2 arg/s f
       (ecase (deref iflag 0)
 	(1 (dotimes (j h)
 	     (dotimes (i w)
-	       (let* ((dx (- i xx))
-		      (dy (- j yy))
+	       (let* ((dx (- (* 1d0 i) xx))
+		      (dy (- (* 1d0 j) yy))
 		      (s2 (/ (* s s)))
 		      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
 		      (e (exp arg)))
@@ -66,8 +66,8 @@ f_s  = 2 arg/s f
 		   ;; f_a  = e
 		   ;; f_b  = 1
 		   ;; f_s  = 2 arg/s f	
-		   (let* ((dx (- i xx))
-			 (dy (- j yy))
+		   (let* ((dx (- (* 1d0 i) xx))
+			 (dy (- (* 1d0 j) yy))
 			 (s2 (/ (* s s)))
 			 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
 			 (e (exp arg))
@@ -75,7 +75,7 @@ f_s  = 2 arg/s f
 			 (fxx (* 2 dx s2 f))
 			 (fyy (* 2 dy s2 f))
 			 (fa e)
-			 (fb 1)
+			 (fb 1d0)
 			 (fs (/ (* 2 arg f)
 				s))
 			 (p (+ i (* w j))))
@@ -181,3 +181,33 @@ f_s  = 2 arg/s f
 
 #+nil
 (time (run))
+
+(defun run2 ()
+  (destructuring-bind (h w) (array-dimensions *img*)
+   (let* ((m (* h w))
+	  (n 5)
+	  (x (make-array n :element-type 'double-float
+			 :initial-element 1d0))
+	  (ldfjac m)
+	  (lwa (+ m (* 5 n)))
+	  (wa (make-array lwa :element-type 'double-float
+			  :initial-element 0d0))
+	  (fvec (make-array m :element-type 'double-float
+			    :initial-element 0d0))
+	  (fjac (make-array (list ldfjac n) 
+			    :element-type 'double-float
+			    :initial-element 0d0))
+	  (ipvt (make-array n
+			    :element-type '(signed-byte 64)
+			    :initial-element 0))
+	  (tol (sqrt double-float-epsilon)))
+     (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
+       (labels ((a (ar)
+		  (sb-sys:vector-sap 
+		   (sb-ext:array-storage-vector
+		    ar))))
+	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
+		  (a ipvt) (a wa) lwa)))
+     (format t "~a ~%" (reduce #'(lambda (x y) (+ x (* y y))) fvec)))))
+
+(time (run2))
