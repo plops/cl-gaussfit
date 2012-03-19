@@ -70,13 +70,33 @@
 
 ;; select 3 preceding and 3 following images for each event
 (defparameter *imgs-more-events*
- (let ((r ()))
+ (let ((r ())
+       (d 2))
    (dolist (e *imgs-with-event*)
-     (loop for i from (- e 3) upto (+ e 3) do
+     (loop for i from (- e d) upto (+ e d) do
 	  (push i r)))
    (uniq (sort r #'<))))
 
+;; show avgs as well
+(defparameter *im*
+ (loop for e in *imgs-more-events* collect
+      (list e (elt *imgs-avg* e))))
 
+
+;; print out the images
+(destructuring-bind (z y x) (array-dimensions *imgs*)
+  (let ((ma (1+ (reduce #'max (array-storage-vector *imgs*)))))
+   (loop for e in *imgs-more-events* do
+	(format t "* ~d *~%" e)
+	(dotimes (j y)
+	  (dotimes (i x)
+	    (format t "~d " (floor (* 9 (let ((q (aref *imgs* e j i)))
+					  (if (= q 0)
+					      0
+					      (log (aref *imgs* e j i)))))
+				   (log ma))))
+	  (terpri))
+	(terpri))))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
