@@ -36,7 +36,7 @@ f_s  = 2 arg/s f
      (x (* double)) ; [xx,yy,a,b,sigma]
      (fvec (* double)) ; m
      (fjac (* double)) ; ldfjac,n
-     (ldfjac (* int)) ; 1  
+     (ldfjac (* int)) ; 1  ;; leading dimension of fjac
      (iflag (* int))) ; 1 1: fvec, 2: fjac
   (destructuring-bind (h w) (array-dimensions *img*)
     (let* ((xx (deref x 0))
@@ -77,14 +77,38 @@ f_s  = 2 arg/s f
 			  (fyy (* 2 dy s2 f))
 			  (fa e)
 			  (fb 1d0)
-			  (fs (/ (* 2 arg f)
+			  (fs (/ (* -2 arg f)
 				 s))
 			  (p (+ i (* w j))))
 		     (setf (f p 0) fxx
 			   (f p 1) fyy
 			   (f p 2) fa
 			   (f p 3) fb
-			   (f p 4) fs))))))))))  
+			   (f p 4) fs)
+		     (let ((h 1d-5))
+		      (let ((dxx 
+				 (/ (- (g i j (+ xx h) yy a b s) (g i j xx yy a b s)) h))
+			       (dyy
+				 (/ (- (g i j xx (+ yy h) a b s) (g i j xx yy a b s)) h))
+			       (da 
+				 (/ (- (g i j xx yy (+ a h) b s) (g i j xx yy a b s)) h))
+			       (db 
+				 (/ (- (g i j xx yy a (+ b h) s) (g i j xx yy a b s)) h))
+			       (ds 
+				 (/ (- (g i j xx yy a b (+ s h)) (g i j xx yy a b s)) h)))
+			(format t "checkderiv ~1,12f ~{~2,3f ~}~%" 
+				(reduce #'(lambda (x y) (+ x (* y y)))
+					(list (- fxx dxx)
+					      (- fyy dyy)
+					      (- fa da)
+					      (- fb db) 
+					      (- fs ds)))
+				(list (/ (- fxx dxx) dxx)
+					      (/ (- fyy dyy) dyy)
+					      (/ (- fa da) da)
+					      (/ (- fb db) db) 
+					      (/ (- fs ds) ds)))))
+		     )))))))))  
   (values))
 
 
