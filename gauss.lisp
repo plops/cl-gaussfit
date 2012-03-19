@@ -95,12 +95,10 @@ f_s  = - 2 arg/s ff
   (values))
 
 
-(defun calc-fjac (x)
-  "m rows, n cols"
+(defun calc-sigmas (x fvec &optional (epsilon 0.05))
   (destructuring-bind (h w) (array-dimensions *img*)
     (let* ((m (* h w))
 	   (n (length x))
-	   ;(jac (make-array (list n m) :element-type 'double-float))
 	   (res (make-array n :element-type 'double-float
 			    :initial-element 0d0))
 	   (xx (aref x 0))
@@ -124,18 +122,16 @@ f_s  = - 2 arg/s ff
 		  (fs (/ (* -2 arg f)
 			 s))
 		  (p (+ i (* w j)))) ;; i (width) is the fast index
-	     #+nil(setf (f p 0) fxx 
-		   (f p 1) fyy
-		   (f p 2) fa
-		   (f p 3) fb
-		   (f p 4) fs)
 	     (icf 0 fxx)
 	     (icf 1 fyy)
 	     (icf 2 fa)
 	     (icf 3 fb)
 	     (icf 4 fs))))
+       
        (dotimes (i n)
-	 (setf (aref res i) (sqrt (aref res i))))
+	 (setf (aref res i) (* (sqrt epsilon)
+			       (/ (sqrt (loop for e across fvec sum (* e e)))
+				  (sqrt (aref res i))))))
        res))))
 
 
@@ -195,7 +191,6 @@ f_s  = - 2 arg/s ff
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
      
-     (defparameter *fjnorm* (calc-fjac x))
      (let ((fnorm (norm fvec))
 	   (fjnorm (make-array n :element-type 'double-float))
 	   (eps .05))
@@ -211,20 +206,20 @@ f_s  = - 2 arg/s ff
 	   (setf (aref fjnorm l) 
 		 (norm (loop for i upto j
 			  collect (aref fjac j i))))))
-      (format t "fjnorms ~a" (list *fjnorm* fjnorm))
-      #+nil(format t "~a ~%" 
-	      (list 'fvec fnorm
-		    'ipvt ipvt
-		    'fjnorm fjnorm
-		    'rel-sigma (loop for i below n collect
+
+      (format t "~{~9s ~{~6,3f ~}~%~} ~%" 
+	      (list 		    'rel-sigma (loop for i below n collect
 				    (/ (* (sqrt eps)
 					  (/ fnorm
 					     (aref fjnorm i)))
 				       (aref x i)))
+		    'x (loop for e across x collect e)
 		    'sigma (loop for i below n collect
 				    (* (sqrt eps)
 				       (/ fnorm
-					  (aref fjnorm i))))))
+					  (aref fjnorm i))))
+		    'sigma-my (loop for e across (calc-sigmas x fvec)
+				   collect e)))
       (defparameter *res* (append (list *rand*)
 				  (loop for i across x collect i) 
 				  (loop for i below n collect
@@ -232,11 +227,11 @@ f_s  = - 2 arg/s ff
 					     (/ fnorm
 						(aref fjnorm i)))
 					  (abs (aref x i))))))
-      (format t "~{~7,3f~}~%" *res*)
+     #+nil (format t "~{~7,3f~}~%" *res*)
       (defparameter *fjac* fjac)))))
 #+NIL
 (progn
-  (setf *rand* .01)
+  (setf *rand* .1)
   (fill-img)
   (run2))
 
