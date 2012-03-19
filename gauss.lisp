@@ -45,11 +45,28 @@
 
 (defparameter *imgs-avg-hist*
  (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 20)
+	(n 10)
 	(hist (make-array n :element-type 'fixnum)))
    (dolist (e *imgs-avg*)
      (incf (aref hist (floor (* n e) ma))))
    hist))
+
+(time
+ (defparameter *imgs-with-event*
+   (let ((ma (1+ (reduce #'max *imgs-avg*))))
+     (loop for k below (length *imgs-avg*)
+	when (< .4 (/ (elt *imgs-avg* k)
+		      ma))
+	collect
+	(list k (elt *imgs-avg* k))))))
+
+(time
+ (defparameter *imgs-with-event*
+   (let ((ma (1+ (reduce #'max *imgs-avg*))))
+     (loop for k from 0 and e in *imgs-avg* 
+	when (< .4 (/ e	ma))
+	collect
+	(list k e)))))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
