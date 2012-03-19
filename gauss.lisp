@@ -35,13 +35,21 @@
       b)))
 
 (defparameter *imgs-avg*
- (destructuring-bind (z y x) (array-dimensions *imgs*)
-   (loop for k below z collect
-	(let ((sum 0))
-	  (dotimes (j y)
-	    (dotimes (i x)
-	      (incf sum (aref *imgs* k j i))))
-	  sum))))
+  (destructuring-bind (z y x) (array-dimensions *imgs*)
+    (loop for k below z collect
+	 (let ((sum 0))
+	   (dotimes (j y)
+	     (dotimes (i x)
+	       (incf sum (aref *imgs* k j i))))
+	   sum))))
+
+(defparameter *imgs-avg-hist*
+ (let* ((ma (1+ (reduce #'max *imgs-avg*)))
+	(n 20)
+	(hist (make-array n :element-type 'fixnum)))
+   (dolist (e *imgs-avg*)
+     (incf (aref hist (floor (* n e) ma))))
+   hist))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
