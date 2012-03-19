@@ -1,3 +1,4 @@
+;; ANL8074a.pdf documentation for minpack
 (defun g (x y x0 y0 a b s)
   (let* ((dx (- x x0))
 	 (dy (- y y0))
@@ -21,12 +22,13 @@ dy = y-yy
 s2 = 1/s^2
 arg = -(dx^2+dy^2) s2
 e = exp(arg)
+ff = a e
 f(x) = a e + b
-f_xx = 2 dx s2 f
-f_yy = 2 dy s2 f
+f_xx = 2 dx s2 ff
+f_yy = 2 dy s2 ff
 f_a  = e
 f_b  = 1
-f_s  = 2 arg/s f
+f_s  = - 2 arg/s ff
 |#
 
 (sb-alien::define-alien-callback fcn2
@@ -66,7 +68,7 @@ f_s  = 2 arg/s f
 		   ;; f_yy = 2 dy s2 f
 		   ;; f_a  = e
 		   ;; f_b  = 1
-		   ;; f_s  = 2 arg/s f	
+		   ;; f_s  = - 2 arg/s f	
 		   (let* ((dx (- (* 1d0 i) xx))
 			  (dy (- (* 1d0 j) yy))
 			  (s2 (/ (* s s)))
@@ -148,7 +150,7 @@ f_s  = 2 arg/s f
 			    :element-type 'double-float
 			    :initial-element 0d0))
 	  (ipvt (make-array n
-			    :element-type '(signed-byte 64)
+			    :element-type '(signed-byte 32)
 			    :initial-element 0))
 	  (tol (sqrt double-float-epsilon)))
      (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
@@ -158,7 +160,9 @@ f_s  = 2 arg/s f
 		    ar))))
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
-     #+nil
-      (format t "~a ~%" (reduce #'(lambda (x y) (+ x (* y y))) fvec)))))
+     (format t "~a ~%" 
+	     (list 'fvec (reduce #'(lambda (x y) (+ x (* y y))) fvec)
+		   'ipvt ipvt
+		   )))))
 #+NIL
 (run2)
