@@ -20,20 +20,28 @@
 	   (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
      a)))
 
-(time
- (defparameter *imgs*
-   (with-open-file (s "example-movie_small5.raw"
-		      :direction :input
-		      :element-type '(unsigned-byte 16))
-     (let* ((n (* 30000 5 5))
-	    (a (make-array n :element-type '(unsigned-byte 16)))
-	    (b (make-array (list 30000 5 5) :element-type '(unsigned-byte 16)))
-	    (b1 (sb-ext:array-storage-vector b)))
-       (read-sequence a s)
-       (dotimes (i n)
-	 (setf (aref b1 i) (+ (ldb (byte 8 8) (aref a i))
-			      (* 256 (ldb (byte 8 0) (aref a i))))))
-       b))))
+(defparameter *imgs*
+  (with-open-file (s "example-movie_small5.raw"
+		     :direction :input
+		     :element-type '(unsigned-byte 16))
+    (let* ((n (* 30000 5 5))
+	   (a (make-array n :element-type '(unsigned-byte 16)))
+	   (b (make-array (list 30000 5 5) :element-type '(unsigned-byte 16)))
+	   (b1 (sb-ext:array-storage-vector b)))
+      (read-sequence a s)
+      (dotimes (i n)
+	(setf (aref b1 i) (+ (ldb (byte 8 8) (aref a i))
+			     (* 256 (ldb (byte 8 0) (aref a i))))))
+      b)))
+
+(defparameter *imgs-avg*
+ (destructuring-bind (z y x) (array-dimensions *imgs*)
+   (loop for k below z collect
+	(let ((sum 0))
+	  (dotimes (j y)
+	    (dotimes (i x)
+	      (incf sum (aref *imgs* k j i))))
+	  sum))))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
