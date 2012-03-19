@@ -178,24 +178,74 @@ f_s  = - 2 arg/s ff
 				    (* (sqrt eps)
 				       (/ fnorm
 					  (aref fjnorm i))))))
-      (format t "~{~6,3f~}~%" (append (list *rand*)
-				       (loop for i across x collect i) 
-				       (loop for i below n collect
-					    (/ (* (sqrt eps)
-						  (/ fnorm
-						     (aref fjnorm i)))
-					       (abs (aref x i))))))
+      (defparameter *res* (append (list *rand*)
+				  (loop for i across x collect i) 
+				  (loop for i below n collect
+				       (/ (* (sqrt eps)
+					     (/ fnorm
+						(aref fjnorm i)))
+					  (abs (aref x i))))))
+      (format t "~{~7,3f~}~%" *res*)
       (defparameter *fjac* fjac)))))
 #+NIL
 (run2)
 
 (progn
-  (format t "~{~6s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
- (dotimes (j 5)
-   (dotimes (i 3)
-     (setf *rand* (+ .01 (* j .1d0)))
-     (fill-img)
-     (run2))))
+  (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
+  (let* ((nj 30)
+	 (n 20)
+	 (h (make-array (list nj n 11) ;; fast: rand x y a b s sx sy sa sb ss 
+			:element-type 'double-float)))
+    (dotimes (j nj)
+      (dotimes (i n)
+	(setf *rand* (+ .001 (* j (/ .1d0 6))))
+	(fill-img)
+	(run2)
+	(loop for k below (length *res*) do
+	     (setf (aref h j i k) (elt *res* k)))))
+    (defparameter *scan3t* h)))
+
+(with-open-file (s "/dev/shm/o.gp" :direction :output :if-does-not-exist :create
+		   :if-exists :supersede)
+  (format s "set yrange [0:1]; plot ")
+  (let* ((j (+ 1 (* 2 4))) 
+	(n (+ j 1)))
+    (loop for i from j upto n do
+	 (format s "\"/dev/shm/o.dat\" u 1:~d w lp~c" i (if (< i n) #\, #\;))))
+  (format s "pause -1"))
+
+(with-open-file (s "/dev/shm/o.dat" :direction :output :if-does-not-exist :create
+		   :if-exists :supersede)
+ (format 
+  s "~{~{~a ~}~%~}~%"
+  (let ((a *scan3*))
+    (destructuring-bind (nj n ne) (array-dimensions a)
+      (loop for j below nj collect
+	   (append (list (format nil "~3f" (aref a j 0 0)))
+		   (flet ((stat (col)
+			    (let* ((avg (loop for i below n sum
+					     (* (/ n) (aref a j i col))))
+				   (stddev (sqrt (loop for i below n
+						    sum
+						      (/ (expt (- (aref a j i col)
+								  avg)
+							       2)
+							 n)))))
+			      (format nil "~5f" stddev)))
+			  (st (col)
+			    (let* ((avg (loop for i below n sum
+					     (* (/ n) (aref a j i col))))
+				   (stddev (sqrt (loop for i below n
+						    sum
+						      (/ (expt (- (aref a j i col)
+								  avg)
+							       2)
+							 n)))))
+			      (format nil "~5f" avg))))
+					; x y a b s
+		     (list (stat 1) (st 6) (stat 2) (st 7)
+			   (stat 3) (st 8) (stat 4) (st 9) 
+			   (stat 5) (st 10))))))))) o
 
 
 #+nil
