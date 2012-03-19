@@ -1,19 +1,24 @@
 ;; ANL8074a.pdf documentation for minpack
+
+(defvar *rand* .9)
+
 (defun g (x y x0 y0 a b s)
   (let* ((dx (- x x0))
 	 (dy (- y y0))
 	 (s2 (/ (* s s)))
 	 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
 	 (e (exp arg)))
-    (+ b (* a e))))
+    (+ (random *rand*) b (* a e))))
 
-(defparameter *img*
- (let ((a (make-array '(5 5) :element-type 'double-float)))
-   (destructuring-bind (h w) (array-dimensions a)
-     (dotimes (j h)
-       (dotimes (i w)
-	 (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
-   a))
+
+(defun fill-img ()
+ (defparameter *img*
+   (let ((a (make-array '(5 5) :element-type 'double-float)))
+     (destructuring-bind (h w) (array-dimensions a)
+       (dotimes (j h)
+	 (dotimes (i w)
+	   (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
+     a)))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
@@ -46,7 +51,7 @@ f_s  = - 2 arg/s ff
 	   (a (deref x 2))
 	   (b (deref x 3))
 	   (s (deref x 4))) 
-      (format t "bla ~a ~%" (list (deref iflag 0)
+      #+nil (format t "bla ~a ~%" (list (deref iflag 0)
 				  (loop for i below 5 collect (deref x i))))
       (ecase (deref iflag 0)
 	(1 (dotimes (j h)
@@ -81,36 +86,12 @@ f_s  = - 2 arg/s ff
 			  (fb 1d0)
 			  (fs (/ (* -2 arg f)
 				 s))
-			  (p (+ i (* w j))))
-		     (setf (f p 0) fxx
+			  (p (+ i (* w j)))) ;; i (width) is the fast index
+		     (setf (f p 0) fxx ;; the pixels are the fast index, the variables are slow
 			   (f p 1) fyy
 			   (f p 2) fa
 			   (f p 3) fb
-			   (f p 4) fs)
-		     #+nil (let ((h 1d-5))
-		      (let ((dxx 
-				 (/ (- (g i j (+ xx h) yy a b s) (g i j xx yy a b s)) h))
-			       (dyy
-				 (/ (- (g i j xx (+ yy h) a b s) (g i j xx yy a b s)) h))
-			       (da 
-				 (/ (- (g i j xx yy (+ a h) b s) (g i j xx yy a b s)) h))
-			       (db 
-				 (/ (- (g i j xx yy a (+ b h) s) (g i j xx yy a b s)) h))
-			       (ds 
-				 (/ (- (g i j xx yy a b (+ s h)) (g i j xx yy a b s)) h)))
-			(format t "checkderiv ~1,12f ~{~2,3f ~}~%" 
-				(reduce #'(lambda (x y) (+ x (* y y)))
-					(list (- fxx dxx)
-					      (- fyy dyy)
-					      (- fa da)
-					      (- fb db) 
-					      (- fs ds)))
-				(list (/ (- fxx dxx) dxx)
-					      (/ (- fyy dyy) dyy)
-					      (/ (- fa da) da)
-					      (/ (- fb db) db) 
-					      (/ (- fs ds) ds)))))
-		     )))))))))  
+			   (f p 4) fs))))))))))  
   (values))
 
 
@@ -132,10 +113,16 @@ f_s  = - 2 arg/s ff
   (wa (* double)) ; lwa out
   (lwa int :copy)) ; 1 in
 
+
+(defun norm (ls)
+  (sqrt
+   (loop for i below (length ls) 
+      sum (expt (elt ls i) 2))))
+
 (defun run2 ()
   (destructuring-bind (h w) (array-dimensions *img*)
-   (let* ((m (* h w))
-	  (n 5)
+   (let* ((m (* h w)) ;; pixels
+	  (n 5) ;; variables
 	  (x (make-array n :element-type 'double-float
 			 :initial-contents
 			 (mapcar #'(lambda (x) (* 1d0 x))
@@ -146,7 +133,11 @@ f_s  = - 2 arg/s ff
 			  :initial-element 0d0))
 	  (fvec (make-array m :element-type 'double-float
 			    :initial-element 0d0))
-	  (fjac (make-array (list n ldfjac) 
+	  (fjac (make-array (list n ldfjac) ;; pixels are fast index
+			    ;; in fortran this is m x n
+			    ;; F'_ij = \partial f_i/\partial x_j
+			    ;; 0<i<m, 0<j<n
+			    ;; columns (along j) store the gradient
 			    :element-type 'double-float
 			    :initial-element 0d0))
 	  (ipvt (make-array n
@@ -160,20 +151,54 @@ f_s  = - 2 arg/s ff
 		    ar))))
 	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
 		  (a ipvt) (a wa) lwa)))
-     (let ((fnorm (reduce #'(lambda (x y) (+ x (* y y))) fvec))
-	   (fjnorm (make-array n :element-type 'double-float)))
-       #+nil(dotimes (j n)
+     (let ((fnorm (norm fvec))
+	   (fjnorm (make-array n :element-type 'double-float))
+	   (eps .05))
+       ;; |x_i - x*_i| <= s_i    with x_j = x*_j for j/=i
+       ;; implies that:
+       ;; ||F(x)|| <= (1+eps) ||F(x*)||
+       ;; ||F'(x*) e_i|| = ||J e_i||
+       ;; ||J e_p(j)|| = ||R e_j||
+      (dotimes (j n)
 	 (let ((l (- (aref ipvt j) 1)))
+	   ;; fjac contains upper triangular matrix R
 	   (setf (aref fjnorm l) 
-		 (reduce #'(lambda (x y) (+ x (* y y)))
-			 ))))
-       (format t "~a ~%" 
-	       (list 'fvec fnorm
-		     'ipvt ipvt))
-       (defparameter *fjac* fjac)))))
+		 (norm (loop for i upto j
+			  collect (aref fjac i j))))))
+      #+nil(format t "~a ~%" 
+	      (list 'fvec fnorm
+		    'ipvt ipvt
+		    'fjnorm fjnorm
+		    'rel-sigma (loop for i below n collect
+				    (/ (* (sqrt eps)
+					  (/ fnorm
+					     (aref fjnorm i)))
+				       (aref x i)))
+		    'sigma (loop for i below n collect
+				    (* (sqrt eps)
+				       (/ fnorm
+					  (aref fjnorm i))))))
+      (format t "~{~6,3f~}~%" (append (list *rand*)
+				       (loop for i across x collect i) 
+				       (loop for i below n collect
+					    (/ (* (sqrt eps)
+						  (/ fnorm
+						     (aref fjnorm i)))
+					       (abs (aref x i))))))
+      (defparameter *fjac* fjac)))))
 #+NIL
 (run2)
 
+(progn
+  (format t "~{~6s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
+ (dotimes (j 5)
+   (dotimes (i 3)
+     (setf *rand* (+ .01 (* j .1d0)))
+     (fill-img)
+     (run2))))
+
+
+#+nil
 (destructuring-bind (h w) (array-dimensions *fjac*)
   (dotimes (j h)
     (dotimes (i w)
