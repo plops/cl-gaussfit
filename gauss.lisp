@@ -85,7 +85,7 @@ f_s  = 2 arg/s f
 			   (f p 2) fa
 			   (f p 3) fb
 			   (f p 4) fs)
-		     (let ((h 1d-5))
+		     #+nil (let ((h 1d-5))
 		      (let ((dxx 
 				 (/ (- (g i j (+ xx h) yy a b s) (g i j xx yy a b s)) h))
 			       (dyy
@@ -137,7 +137,7 @@ f_s  = 2 arg/s f
 	  (x (make-array n :element-type 'double-float
 			 :initial-contents
 			 (mapcar #'(lambda (x) (* 1d0 x))
-				 '(8 8 1 .01 3.01))))
+				 '(8 8 1 1 1))))
 	  (ldfjac m)
 	  (lwa (+ m (* 5 n)))
 	  (wa (make-array lwa :element-type 'double-float
