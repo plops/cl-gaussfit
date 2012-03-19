@@ -182,7 +182,7 @@ f_s  = - 2 arg/s ff
 	  (ipvt (make-array n
 			    :element-type '(signed-byte 32)
 			    :initial-element 0))
-	  (tol (sqrt double-float-epsilon)))
+	  (tol .0001d0 #+nil (sqrt double-float-epsilon)))
      (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
        (labels ((a (ar)
 		  (sb-sys:vector-sap 
@@ -227,23 +227,25 @@ f_s  = - 2 arg/s ff
 					     (/ fnorm
 						(aref fjnorm i)))
 					  (abs (aref x i))))))
-     #+nil (format t "~{~7,3f~}~%" *res*)
+     #+nil (format t "~{~8,4f~}~%" *res*)
       (defparameter *fjac* fjac)))))
 #+NIL
 (progn
-  (setf *rand* .1)
+  (setf *rand* .001)
   (fill-img)
-  (run2))
+  (time
+   (dotimes (i 30)
+     (run2))))
 
 (progn
   (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
-  (let* ((nj 30)
-	 (n 100)
+  (let* ((nj 60)
+	 (n 20)
 	 (h (make-array (list nj n 11) ;; fast: rand x y a b s sx sy sa sb ss 
 			:element-type 'double-float)))
     (dotimes (j nj)
       (dotimes (i n)
-	(setf *rand* (+ .001 (* j (/ .1d0 6))))
+	(setf *rand* (+ .001 (* j (/ .1d0 12))))
 	(fill-img)
 	(run2)
 	(loop for k below (length *res*) do
@@ -252,11 +254,12 @@ f_s  = - 2 arg/s ff
 
 (with-open-file (s "/dev/shm/o.gp" :direction :output :if-does-not-exist :create
 		   :if-exists :supersede)
-  (format s "set yrange [0:1]; plot ")
-  (let* ((j (+ 1 (* 2 4))) 
-	(n (+ j 1)))
+  (format s "#set yrange [0:1];
+ plot ")
+  (let* ((j (+ 2 (* 2 4))) 
+	 (n (+ j 1)))
     (loop for i from j upto n do
-	 (format s "\"/dev/shm/o.dat\" u 1:~d w lp~c" i (if (< i n) #\, #\;))))
+	 (format s "\"/dev/shm/o.dat\" u 1:~d w l~c" i (if (< i n) #\, #\;))))
   (format s "pause -1"))
 
 (with-open-file (s "/dev/shm/o.dat" :direction :output :if-does-not-exist :create
@@ -267,30 +270,31 @@ f_s  = - 2 arg/s ff
     (destructuring-bind (nj n ne) (array-dimensions a)
       (loop for j below nj collect
 	   (append (list (format nil "~3f" (aref a j 0 0)))
-		   (flet ((stat (col)
-			    (let* ((avg (loop for i below n sum
-					     (* (/ n) (aref a j i col))))
-				   (stddev (sqrt (loop for i below n
-						    sum
-						      (/ (expt (- (aref a j i col)
-								  avg)
-							       2)
-							 n)))))
-			      (format nil "~5f" stddev)))
-			  (st (col)
-			    (let* ((avg (loop for i below n sum
-					     (* (/ n) (aref a j i col))))
-				   (stddev (sqrt (loop for i below n
-						    sum
-						      (/ (expt (- (aref a j i col)
-								  avg)
-							       2)
-							 n)))))
-			      (format nil "~5f" avg))))
+		   (let ((real-mean '(2.3d0 2.5d0 .7d0 .005d0 2d0)))
+		    (flet ((stat (col)
+			     (let* ((avg (loop for i below n sum
+					      (* (/ n) (aref a j i col))))
+				    (stddev (sqrt (loop for i below n
+						     sum
+						     (/ (expt (- (aref a j i col)
+								 (elt real-mean (1- col)))
+							      2)
+							n)))))
+			       (format nil "~5f" stddev)))
+			   (st (col)
+			     (let* ((avg (loop for i below n sum
+					      (* (/ n) (aref a j i col))))
+				    (stddev (sqrt (loop for i below n
+						     sum
+						     (/ (expt (- (aref a j i col)
+								 avg)
+							      2)
+							n)))))
+			       (format nil "~5f" (* 3 avg)))))
 					; x y a b s
-		     (list (stat 1) (st 6) (stat 2) (st 7)
-			   (stat 3) (st 8) (stat 4) (st 9) 
-			   (stat 5) (st 10))))))))) o
+		      (list (stat 1) (st 6) (stat 2) (st 7)
+			    (stat 3) (st 8) (stat 4) (st 9) 
+			    (stat 5) (st 10)))))))))) o
 
 ;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
 
