@@ -20,6 +20,21 @@
 	   (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
      a)))
 
+(time
+ (defparameter *imgs*
+   (with-open-file (s "example-movie_small5.raw"
+		      :direction :input
+		      :element-type '(unsigned-byte 16))
+     (let* ((n (* 30000 5 5))
+	    (a (make-array n :element-type '(unsigned-byte 16)))
+	    (b (make-array (list 30000 5 5) :element-type '(unsigned-byte 16)))
+	    (b1 (sb-ext:array-storage-vector b)))
+       (read-sequence a s)
+       (dotimes (i n)
+	 (setf (aref b1 i) (+ (ldb (byte 8 8) (aref a i))
+			      (* 256 (ldb (byte 8 0) (aref a i))))))
+       b))))
+
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
 dx = x-xx
@@ -35,6 +50,8 @@ f_a  = e
 f_b  = 1
 f_s  = - 2 arg/s ff
 |#
+
+(defvar *img* nil)
 
 (sb-alien::define-alien-callback fcn2
     void
@@ -294,7 +311,7 @@ f_s  = - 2 arg/s ff
 					; x y a b s
 		      (list (stat 1) (st 6) (stat 2) (st 7)
 			    (stat 3) (st 8) (stat 4) (st 9) 
-			    (stat 5) (st 10)))))))))) o
+			    (stat 5) (st 10))))))))))
 
 ;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
 
