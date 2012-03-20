@@ -22,12 +22,15 @@
 
 ;; load the data and swap endian
 (defparameter *imgs*
-  (with-open-file (s "example-movie_small5.raw"
+  (with-open-file (s "example-movie_small4.raw"
 		     :direction :input
 		     :element-type '(unsigned-byte 16))
-    (let* ((n (* 29000 5 5)) ;; the last 1000 images look wrong
+    (let* ((z 29000)
+	   (x 10)
+	   (y 10)
+	   (n (* z x y)) ;; the last 1000 images look wrong
 	   (a (make-array n :element-type '(unsigned-byte 16)))
-	   (b (make-array (list 29000 5 5) :element-type '(unsigned-byte 16)))
+	   (b (make-array (list z y x) :element-type '(unsigned-byte 16)))
 	   (b1 (sb-ext:array-storage-vector b)))
       (read-sequence a s)
       (dotimes (i n)
@@ -52,13 +55,14 @@
 	(hist (make-array n :element-type 'fixnum)))
    (dolist (e *imgs-avg*)
      (incf (aref hist (floor (* n e) ma))))
-   hist))
+   (loop for j from 0 and i across hist collect
+	(list (floor (* ma (/ 1d0 n) j)) i))))
 
 ;; select images with bright events
 (defparameter *imgs-with-event*
   (let ((ma (1+ (reduce #'max *imgs-avg*))))
     (loop for k from 0 and e in *imgs-avg* 
-       when (< 12500 e) ;(< .51 (/ e	ma))
+       when (< 49000 e) ;(< .51 (/ e	ma))
        collect k)))
 
 (defun uniq (ls)
@@ -71,7 +75,7 @@
 ;; select 3 preceding and 3 following images for each event
 (defparameter *imgs-more-events*
  (let ((r ())
-       (d 1))
+       (d 2))
    (dolist (e *imgs-with-event*)
      (loop for i from (- e d) upto (+ e d) do
 	  (when (<= 0 i 28999)
@@ -101,23 +105,39 @@
  (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
 
 
+(defun extract-frame (img k)
+  (destructuring-bind (z y x) (array-dimensions img)
+    (let ((start (* x y k)))
+      (make-array (list y x) 
+		  :element-type '(unsigned-byte 16)
+		  :displaced-to (subseq (array-storage-vector img)
+					start (+ start (* x y)))))))
 
 ;; print out the images
 (destructuring-bind (z y x) (array-dimensions *imgs*)
-  (let (;(ma (1+ (reduce #'max (array-storage-vector *imgs*))))
-	)
-   (loop for e in *imgs-more-events* do
-	(format t "* ~d *~%" e)
-	(let ((ma (reduce #'max
-			  (let ((start (* x y e)))
-			    (subseq (array-storage-vector *imgs*)
-				    start (+ start (* x y)))))))
+  (loop for e in *imgs-more-events* do
+       (format t "* ~6,'0d *~%" e)
+       (let ((ma (reduce #'max
+			 (array-displacement
+			  (extract-frame *imgs* e)))))
 	 (dotimes  (j y)
 	   (dotimes (i x)
 	     (format t "~d " (floor (* 9 (aref *imgs* e j i))
 				    ma)))
 	   (terpri)))
-	(terpri))))
+       (terpri)))
+
+(defun find-val-in-image (img val)
+  (destructuring-bind (y x) (array-dimensions img)
+    (dotimes (j y)
+      (dotimes (i x)
+	(when (= (aref img j i) val)
+	  (return-from find-val-in-image (values j i)))))))
+
+;; frame 673 ff contains a maximum not too close to border at x=2 y=7
+(let* ((frame (extract-frame *imgs* 673))
+       (ma (reduce #'max (array-displacement frame))))
+  (find-val-in-image frame ma))
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
