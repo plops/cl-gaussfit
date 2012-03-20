@@ -1,5 +1,13 @@
 ;; ANL8074a.pdf documentation for minpack
 
+;; how to do fitting on the gpu (they consider poisson noise but it
+;; doesn't seem to improve precision, their method is very fast but
+;; they don't give code)
+;; /home/martin/ondrej-papers/papers/Quan2010OSA.pdf
+
+;; fitting precision 2004 ober
+;;  /home/martin/ondrej-papers/papers/sdarticle\ \(3\).pdf
+
 (defvar *rand* .9)
 
 (defun g (x y x0 y0 a b s)
@@ -22,12 +30,12 @@
 
 ;; load the data and swap endian
 (defparameter *imgs*
-  (with-open-file (s "example-movie_small4.raw"
+  (with-open-file (s "example-movie_64x64x30000.raw"
 		     :direction :input
 		     :element-type '(unsigned-byte 16))
     (let* ((z 29000)
-	   (x 10)
-	   (y 10)
+	   (x 64)
+	   (y 64)
 	   (n (* z x y)) ;; the last 1000 images look wrong
 	   (a (make-array n :element-type '(unsigned-byte 16)))
 	   (b (make-array (list z y x) :element-type '(unsigned-byte 16)))
@@ -51,7 +59,7 @@
 ;; accumulate histograms of the averages to determine which images have events
 (defparameter *imgs-avg-hist*
  (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 100)
+	(n 10)
 	(hist (make-array n :element-type 'fixnum)))
    (dolist (e *imgs-avg*)
      (incf (aref hist (floor (* n e) ma))))
@@ -114,6 +122,7 @@
 					start (+ start (* x y)))))))
 
 ;; print out the images
+#+nil
 (destructuring-bind (z y x) (array-dimensions *imgs*)
   (loop for e in *imgs-more-events* do
        (format t "* ~6,'0d *~%" e)
@@ -161,7 +170,7 @@
 	       (1+ sigma-digits))))
    (if (<= sigma-digits 0)
        (format nil "~4d ~4d" (floor x) (floor sx))
-       (format nil (format nil "~~6,~df ~~6,~df" n n) x sx))))
+       (format nil (format nil "~~5,~df ~~5,~df" n n) x sx))))
 
 #+nil
 (print-with-error 2.2442 0.13)
@@ -171,22 +180,29 @@
  (print-with-error 10242.1213 123.02)
  (print-with-error 10242.1213 1.02))
 
-
+#+nil
 (time
- (loop for k from 673 upto 688 do
-      (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
-      (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
-	(multiple-value-bind (theta sigmas fnorm)
-	    (fit-gaussian :x0 x0 :y0 y0)
-	  (destructuring-bind (x y a b s) (loop for e across theta collect e)
-	    (destructuring-bind (sx sy sa sb ss) sigmas
-	      (format t "~a~%" (list k
-				     (print-with-error x sx)
-				     (print-with-error y sy)
-				     (print-with-error a sa)
-				     (print-with-error b sb)
-				     (print-with-error s ss)
-				     (floor fnorm)))))))))
+ (let ((oldx 0)
+       (oldy 0))
+  (loop for k from 673 upto 712 do
+       (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
+       (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
+	 (multiple-value-bind (theta sigmas fnorm)
+	     ;; use old fit position if it isn't too far off from the maximum
+	     (if (< (sqrt (+ (expt (- oldx x0) 2) (expt (- oldy y0) 2))) 1)
+		 (fit-gaussian :x0 oldx :y0 oldy :a 1 :b .5 :sigma .85)
+		 (fit-gaussian :x0 x0 :y0 y0 :a 1 :b .5 :sigma .85))
+	   (destructuring-bind (x y a b s) (loop for e across theta collect e)
+	     (destructuring-bind (sx sy sa sb ss) sigmas
+	       (format t "~a~%" (list k
+				      (print-with-error x sx)
+				      (print-with-error y sy)
+				      (print-with-error a sa)
+				      (print-with-error b sb)
+				      (print-with-error s ss)
+				      (format nil "~5,2f" fnorm))))
+	     (setf oldx x
+		   oldy y)))))))
 
 
 #|
@@ -312,7 +328,7 @@ f_s  = - 2 arg/s ff
 	  (ipvt (make-array n
 			    :element-type '(signed-byte 32)
 			    :initial-element 0))
-	  (tol .0001d0 #+nil (sqrt double-float-epsilon)))
+	  (tol .05d0 #+nil (sqrt double-float-epsilon)))
      (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
        (labels ((a (ar)
 		  (sb-sys:vector-sap 
