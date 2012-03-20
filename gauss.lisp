@@ -33,7 +33,7 @@
   (with-open-file (s "example-movie_64x64x30000.raw"
 		     :direction :input
 		     :element-type '(unsigned-byte 16))
-    (let* ((z 29000)
+    (let* ((z 30000)
 	   (x 64)
 	   (y 64)
 	   (n (* z x y)) ;; the last 1000 images look wrong
@@ -127,15 +127,6 @@
 			 :if-exists :supersede
 			 :if-does-not-exist :create)
 	(write-sequence head s))
-      (dotimes (i w)
-	(setf (aref img 10 i) 255
-	      (aref img 200 i) 220))
-      (dotimes (j h)
-	(setf 
-	 (aref img j 0) 30000
- 	 (aref img j 10) 10000
-	 (aref img j (1- w)) 22000)
-	(setf (aref img j 200) 20000))
       (let* ((i1 (array-storage-vector img))
 	     (n (length i1))
 	     (h1 (make-array n :element-type '(unsigned-byte 16))))
@@ -149,8 +140,34 @@
 	  (write-sequence h1 s)))))
   (values))
 
+(defun scale-log (img)
+  (let* ((i1 (array-storage-vector img))
+	(n (length i1))
+	(ma (reduce #'max img)))
+    (dotimes (i n)
+      (let ((v (aref i1 i)))
+       (setf (aref i1 i) (if (= v 0)
+			     0
+			     (* (expt 2 16) (log v) (/ (log ma)))))))
+    img))
+
+(defun copy-img (img)
+  (let* ((i1 (array-storage-vector img))
+	 (d1 (make-array (array-dimensions i1)
+			 :element-type (array-element-type i1)
+			 :displaced-to i1))
+	 (c1 (subseq d1 0))
+	 (c (make-array (array-dimensions img)
+			:element-type (array-element-type img)
+			:displaced-to c1)))
+    c))
 #+nil
-(write-fits "/dev/shm/hist.fits" *hists*)
+(time
+ (defparameter *bla*(copy-img *hists*)))
+
+#+nil
+(let ((a (copy-seq )))
+ (write-fits "/dev/shm/hist.fits" *hists*))
 
 #+nil
 (time
