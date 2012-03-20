@@ -152,10 +152,40 @@
       (setf (aref a1 i) (* 1d0 (aref i1 i))))
     a))
 
-(let ((k 680))
+;; print 2 digits of the sigma sx and the same for the value x
+;; if sx>1 print all digits
+(defun print-with-error (x sx)
+ (let* ((sigma-digits (- (floor (log sx 10))))
+	(n (if (<= sigma-digits 0) 
+	       0 ;; if sigma > 1 
+	       (1+ sigma-digits))))
+   (if (<= sigma-digits 0)
+       (format nil "~6d ~6d" (floor x) (floor sx))
+       (format nil (format nil "~~6,~df ~~6,~df" n n) x sx))))
+
+#+nil
+(print-with-error 2.2442 0.13)
+
+#+nil
+(list
+ (print-with-error 10242.1213 123.02)
+ (print-with-error 10242.1213 1.02))
+
+
+
+(loop for k from 673 upto 700 do
  (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
  (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
-   (fit-gaussian :x0 x0 :y0 y0)))
+   (multiple-value-bind (theta sigmas)
+       (fit-gaussian :x0 x0 :y0 y0)
+     (destructuring-bind (x y a b s) (loop for e across theta collect e)
+      (destructuring-bind (sx sy sa sb ss) sigmas
+	(format t "~a~%" (list k
+			       (print-with-error x sx)
+			       (print-with-error y sy)
+			       (print-with-error a sa)
+			       (print-with-error b sb)
+			       (print-with-error s ss))))))))
 
 
 #|
@@ -235,47 +265,6 @@ f_s  = - 2 arg/s ff
   (values))
 
 
-(defun calc-sigmas (x fvec &optional (epsilon 0.05))
-  (destructuring-bind (h w) (array-dimensions *img*)
-    (let* ((m (* h w))
-	   (n (length x))
-	   (res (make-array n :element-type 'double-float
-			    :initial-element 0d0))
-	   (xx (aref x 0))
-	   (yy (aref x 1))
-	   (a (aref x 2))
-	   (s (aref x 4)))
-      (labels ((icf (a v)
-		 (incf (aref res a) (* v v))))
-       (dotimes (j h)
-	 (dotimes (i w)
-	   (let* ((dx (- (* 1d0 i) xx))
-		  (dy (- (* 1d0 j) yy))
-		  (s2 (/ (* s s)))
-		  (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-		  (e (exp arg))
-		  (f (* e a))
-		  (fxx (* 2 dx s2 f))
-		  (fyy (* 2 dy s2 f))
-		  (fa e)
-		  (fb 1d0)
-		  (fs (/ (* -2 arg f)
-			 s))
-		  (p (+ i (* w j)))) ;; i (width) is the fast index
-	     (icf 0 fxx)
-	     (icf 1 fyy)
-	     (icf 2 fa)
-	     (icf 3 fb)
-	     (icf 4 fs))))
-       
-       (dotimes (i n)
-	 (setf (aref res i) (* (sqrt epsilon)
-			       (/ (sqrt (loop for e across fvec sum (* e e)))
-				  (sqrt (aref res i))))))
-       res))))
-
-
-
 (load-shared-object "/usr/lib/libminpack.so")
 
 (define-alien-routine lmder1_ void
@@ -346,29 +335,11 @@ f_s  = - 2 arg/s ff
 	   (setf (aref fjnorm l) 
 		 (norm (loop for i upto j
 			  collect (aref fjac j i))))))
-
-      (format t "~{~9s ~{~6,3f ~}~%~} ~%" 
-	      (list 		    'rel-sigma (loop for i below n collect
-				    (/ (* (sqrt eps)
-					  (/ fnorm
-					     (aref fjnorm i)))
-				       (aref x i)))
-		    'x (loop for e across x collect e)
-		    'sigma (loop for i below n collect
+      (values x
+	      (loop for i below n collect
 				    (* (sqrt eps)
 				       (/ fnorm
-					  (aref fjnorm i))))
-		    'sigma-my (loop for e across (calc-sigmas x fvec)
-				   collect e)))
-      (defparameter *res* (append (list *rand*)
-				  (loop for i across x collect i) 
-				  (loop for i below n collect
-				       (/ (* (sqrt eps)
-					     (/ fnorm
-						(aref fjnorm i)))
-					  (abs (aref x i))))))
-     #+nil (format t "~{~8,4f~}~%" *res*)
-      (defparameter *fjac* fjac)))))
+					  (aref fjnorm i)))))))))
 #+NIL
 (progn
   (setf *rand* .001)
