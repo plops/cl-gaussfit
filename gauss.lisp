@@ -58,7 +58,7 @@
 (defparameter *imgs-with-event*
   (let ((ma (1+ (reduce #'max *imgs-avg*))))
     (loop for k from 0 and e in *imgs-avg* 
-       when (< .4 (/ e	ma))
+       when (< .3 (/ e	ma))
        collect k)))
 
 (defun uniq (ls)
@@ -71,7 +71,7 @@
 ;; select 3 preceding and 3 following images for each event
 (defparameter *imgs-more-events*
  (let ((r ())
-       (d 2))
+       (d 9))
    (dolist (e *imgs-with-event*)
      (loop for i from (- e d) upto (+ e d) do
 	  (push i r)))
@@ -82,6 +82,22 @@
  (loop for e in *imgs-more-events* collect
       (list e (elt *imgs-avg* e))))
 
+#+nil
+(length *im*)
+
+;; plot data
+(progn
+ (with-open-file (s "/dev/shm/o.dat"
+		    :direction :output
+		    :if-exists :supersede
+		    :if-does-not-exist :create)
+   (format s "~{~{~6d ~6d~}~%~}" *im*))
+ (with-open-file (s "/dev/shm/o.gp"
+		    :direction :output
+		    :if-exists :supersede
+		    :if-does-not-exist :create)
+   (format s "plot \"/dev/shm/o.dat\" u 1:2 w l; pause -1"))
+ (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
 
 ;; print out the images
 (destructuring-bind (z y x) (array-dimensions *imgs*)
@@ -93,8 +109,8 @@
 	    (format t "~d " (floor (* 9 (let ((q (aref *imgs* e j i)))
 					  (if (= q 0)
 					      0
-					      (log (aref *imgs* e j i)))))
-				   (log ma))))
+					      (aref *imgs* e j i))))
+				   ma)))
 	  (terpri))
 	(terpri))))
 
