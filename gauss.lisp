@@ -105,17 +105,18 @@
 ;; offset in example file #x1680 = 5760 = 2*2880
 
 (defun generate-fits-header (&key (bits 16) (w 484) (h 400))
- (let* ((dat `((BITPIX ,bits)
+ (let* ((dat `((SIMPLE T)
+	       (BITPIX ,bits)
 	       (NAXIS1 ,w)
 	       (NAXIS2 ,h)
 	       (BSCALE 1)
-	       (BZERO 32768))))
+	       (BZERO  32768))))
    (with-output-to-string (s)
      (labels ((ensure-80-chars (str)
 		(format s "~80A" str)))
        (dolist (e dat)
-	 (ensure-80-chars 
-	  (format nil "~s = ~d" (first e) (second e))))
+	 (ensure-80-chars ;; the imagej writer puts = at 9th position and value starts at 11
+	  (format nil "~8A= ~A" (first e) (second e))))
        (ensure-80-chars "END")
        (dotimes (i 36)
 	 (ensure-80-chars "")))
@@ -129,11 +130,26 @@
 			 :if-exists :supersede
 			 :if-does-not-exist :create)
 	(write-sequence head s))
-      (with-open-file (s filename
-			 :element-type '(unsigned-byte 16)
-			 :direction :output
-			 :if-exists :append)
-	(write-sequence (array-storage-vector img) s))))
+      (dotimes (i w)
+	(setf (aref img 10 i) 255
+	      (aref img 200 i) 220))
+      (dotimes (j h)
+	(setf 
+	 (aref img j 0) 30000
+ 	 (aref img j 10) 10000
+	 (aref img j (1- w)) 22000)
+	(setf (aref img j 200) 20000))
+      (let* ((i1 (array-storage-vector img))
+	     (n (length i1))
+	     (h1 (make-array n :element-type '(unsigned-byte 16))))
+	(dotimes (i n) ;; swap endian
+	  (setf (aref h1 i) (+ (ldb (byte 8 8) (aref i1 i))
+			       (* 256 (ldb (byte 8 0) (aref i1 i))))))
+	(with-open-file (s filename
+			   :element-type '(unsigned-byte 16)
+			   :direction :output
+			   :if-exists :append)
+	  (write-sequence h1 s)))))
   (values))
 
 #+nil
@@ -145,7 +161,7 @@
    (destructuring-bind (z y x) (array-dimensions *imgs*)
      (let* ((ma (1+ (find-max *imgs*)))
 	    (n 400)
-	    (ni 60) ;; combine 100 images into histogram
+	    (ni 30) ;; combine ni=100 images into histogram
 	    (hist (make-array (list (ceiling z ni) n) :element-type 'fixnum)))
        (dotimes (k z)
 	 (dotimes (j y)
