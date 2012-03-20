@@ -197,9 +197,23 @@
 	 a)))))
 
 
+;; i now want to separate background and signal. ideally i would just
+;; create masks to select background, but i don't see a robust way to
+;; do that. instead i will subtract images. i expect the histogram of
+;; those to contain a gaussian distribution centered on 0. its sigma
+;; should be the same as the background sigma.
+
+;; i hope that the signal's contribution is separated a bit better in
+;; the histogram. for this i shouldn't subtract consecutive images but
+;; ensure, that molecules are in different positions in both images.
+
+;; eventually i would like to know the sigma and mean of the
+;; background, so that i can select events that are brighter than,
+;; i.e. 5 sigma
 
 
 ;; calculate average over each image
+#+nil
 (defparameter *imgs-avg*
   (destructuring-bind (z y x) (array-dimensions *imgs*)
     (loop for k below z collect
@@ -210,6 +224,7 @@
 	   sum))))
 
 ;; accumulate histograms of the averages to determine which images have events
+#+nil
 (defparameter *imgs-avg-hist*
  (let* ((ma (1+ (reduce #'max *imgs-avg*)))
 	(n 10)
@@ -220,6 +235,7 @@
 	(list (floor (* ma (/ 1d0 n) j)) i))))
 
 ;; select images with bright events
+#+nil
 (defparameter *imgs-with-event*
   (let ((ma (1+ (reduce #'max *imgs-avg*))))
     (loop for k from 0 and e in *imgs-avg* 
@@ -234,6 +250,7 @@
       collect (progn (setf old e) e))))
 
 ;; select 3 preceding and 3 following images for each event
+#+nil
 (defparameter *imgs-more-events*
  (let ((r ())
        (d 2))
@@ -244,6 +261,7 @@
    (uniq (sort r #'<))))
 
 ;; show avgs as well
+#+nil
 (defparameter *im*
  (loop for e in *imgs-more-events* collect
       (list e (elt *imgs-avg* e))))
@@ -252,6 +270,7 @@
 (length *im*)
 
 ;; plot data
+#+nil
 (progn
  (with-open-file (s "/dev/shm/o.dat"
 		    :direction :output
@@ -268,11 +287,37 @@
 
 (defun extract-frame (img k)
   (destructuring-bind (z y x) (array-dimensions img)
-    (let ((start (* x y k)))
+    (let* ((start (* x y k))
+	   (i1 (make-array (* x y) :element-type (array-element-type img)
+			   :displaced-to img
+			   :displaced-index-offset start))
+	   (c1 (subseq i1 0)))
       (make-array (list y x) 
-		  :element-type '(unsigned-byte 16)
-		  :displaced-to (subseq (array-storage-vector img)
-					start (+ start (* x y)))))))
+		  :element-type (array-element-type img)
+		  :displaced-to c1))))
+
+(defun make-displaced-array (a)
+  (make-array (array-total-size a)
+	      :element-type (array-element-type a)
+	      :displaced-to a))
+
+(defun img-op (op a b)
+  (let* ((a1 (make-displaced-array a))
+	 (b1 (make-displaced-array b))
+	 (c (make-array (array-dimensions a)
+			:element-type 'double-float))
+	 (c1 (make-displaced-array c)))
+    (dotimes (i (length a1))
+      (setf (aref c1 i) (* 1d0 (funcall op (aref a1 i) (aref b1 i)))))
+    c))
+
+#+nil
+(defparameter *bla*
+  (loop for i below 100 collect
+   (img-op #'-
+	   (extract-frame *imgs* i)
+	   (extract-frame *imgs* (+ i 30)))))
+
 
 ;; print out the images
 #+nil
