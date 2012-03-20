@@ -86,21 +86,85 @@
 
 ;; definition of fits file
 ;; ftp://nssdc.gsfc.nasa.gov/pub/fits
+;; 80 byte per header entry
+;; from imagej source
+;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/FTIS_Reader.java
+;; start with SIMPLE = T / comment
+;; = separates key value pair
+;; / indicates comment
+;; END stops
+;; BITPIX = 16 short 32 int -32 float, -64 double
+;; NAXIS1 = 129 / width, NAXIS2, NAXIS3
+;; BSCALE = 1.34 / should be 1.0, then no calibration in imagej
+;; BZERO = 32768 / for ushort (expt 2 15)
+;; probably 2147483648 = (expt 2 31) for uint
+;; count such lines (each 80 bytes long)
+;; offset with data at 2880+2880*(((count*80)-1)/2880)
+;; origin at bottom left
+
+;; offset in example file #x1680 = 5760 = 2*2880
+
+(defun generate-fits-header (&key (bits 16) (w 484) (h 400))
+ (let* ((dat `((BITPIX ,bits)
+	       (NAXIS1 ,w)
+	       (NAXIS2 ,h)
+	       (BSCALE 1)
+	       (BZERO 32768))))
+   (with-output-to-string (s)
+     (labels ((ensure-80-chars (str)
+		(format s "~80A" str)))
+       (dolist (e dat)
+	 (ensure-80-chars 
+	  (format nil "~s = ~d" (first e) (second e))))
+       (ensure-80-chars "END")
+       (dotimes (i 36)
+	 (ensure-80-chars "")))
+     s)))
+
+(defun write-fits (filename img)
+  (destructuring-bind (h w) (array-dimensions img)
+    (let ((head (generate-fits-header :w w :h h)))
+      (with-open-file (s filename
+			 :direction :output
+			 :if-exists :supersede
+			 :if-does-not-exist :create)
+	(write-sequence head s))
+      (with-open-file (s filename
+			 :element-type '(unsigned-byte 16)
+			 :direction :output
+			 :if-exists :append)
+	(write-sequence (array-storage-vector img) s))))
+  (values))
+
+#+nil
+(write-fits "/dev/shm/hist.fits" *hists*)
 
 #+nil
 (time
  (defparameter *hists*
    (destructuring-bind (z y x) (array-dimensions *imgs*)
      (let* ((ma (1+ (find-max *imgs*)))
-	    (n 100)
-	    (ni 100) ;; combine 100 images into histogram
-	    (hist (make-array (list (floor z ni) n) :element-type 'fixnum)))
+	    (n 400)
+	    (ni 60) ;; combine 100 images into histogram
+	    (hist (make-array (list (ceiling z ni) n) :element-type 'fixnum)))
        (dotimes (k z)
 	 (dotimes (j y)
 	   (dotimes (i x)
 	     (incf (aref hist (floor k ni) 
 			 (floor (* n (aref *imgs* k j i)) ma))))))
-       hist))))
+       (let ((ma (reduce #'max (array-storage-vector hist)))) 
+	 (when (< (1- (expt 2 16)) ma)
+	  (error "maximum count ~d in histogram doesn't fit into 16 bit" ma)))
+       (let* ((a (make-array (array-dimensions hist)
+			     :element-type '(unsigned-byte 16)))
+	      (a1 (array-storage-vector a))
+	      (h1 (array-storage-vector hist)))
+	 (dotimes (i (length a1))
+	   (setf (aref a1 i) (aref h1 i)))
+	 a)))))
+
+
+
 
 ;; calculate average over each image
 (defparameter *imgs-avg*
