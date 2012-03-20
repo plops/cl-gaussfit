@@ -25,9 +25,9 @@
   (with-open-file (s "example-movie_small5.raw"
 		     :direction :input
 		     :element-type '(unsigned-byte 16))
-    (let* ((n (* 30000 5 5))
+    (let* ((n (* 29000 5 5)) ;; the last 1000 images look wrong
 	   (a (make-array n :element-type '(unsigned-byte 16)))
-	   (b (make-array (list 30000 5 5) :element-type '(unsigned-byte 16)))
+	   (b (make-array (list 29000 5 5) :element-type '(unsigned-byte 16)))
 	   (b1 (sb-ext:array-storage-vector b)))
       (read-sequence a s)
       (dotimes (i n)
@@ -48,7 +48,7 @@
 ;; accumulate histograms of the averages to determine which images have events
 (defparameter *imgs-avg-hist*
  (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 10)
+	(n 100)
 	(hist (make-array n :element-type 'fixnum)))
    (dolist (e *imgs-avg*)
      (incf (aref hist (floor (* n e) ma))))
@@ -58,7 +58,7 @@
 (defparameter *imgs-with-event*
   (let ((ma (1+ (reduce #'max *imgs-avg*))))
     (loop for k from 0 and e in *imgs-avg* 
-       when (< .3 (/ e	ma))
+       when (< 12500 e) ;(< .51 (/ e	ma))
        collect k)))
 
 (defun uniq (ls)
@@ -71,10 +71,11 @@
 ;; select 3 preceding and 3 following images for each event
 (defparameter *imgs-more-events*
  (let ((r ())
-       (d 9))
+       (d 1))
    (dolist (e *imgs-with-event*)
      (loop for i from (- e d) upto (+ e d) do
-	  (push i r)))
+	  (when (<= 0 i 28999)
+	    (push i r))))
    (uniq (sort r #'<))))
 
 ;; show avgs as well
@@ -99,19 +100,23 @@
    (format s "plot \"/dev/shm/o.dat\" u 1:2 w l; pause -1"))
  (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
 
+
+
 ;; print out the images
 (destructuring-bind (z y x) (array-dimensions *imgs*)
-  (let ((ma (1+ (reduce #'max (array-storage-vector *imgs*)))))
+  (let (;(ma (1+ (reduce #'max (array-storage-vector *imgs*))))
+	)
    (loop for e in *imgs-more-events* do
 	(format t "* ~d *~%" e)
-	(dotimes (j y)
-	  (dotimes (i x)
-	    (format t "~d " (floor (* 9 (let ((q (aref *imgs* e j i)))
-					  (if (= q 0)
-					      0
-					      (aref *imgs* e j i))))
-				   ma)))
-	  (terpri))
+	(let ((ma (reduce #'max
+			  (let ((start (* x y e)))
+			    (subseq (array-storage-vector *imgs*)
+				    start (+ start (* x y)))))))
+	 (dotimes  (j y)
+	   (dotimes (i x)
+	     (format t "~d " (floor (* 9 (aref *imgs* e j i))
+				    ma)))
+	   (terpri)))
 	(terpri))))
 
 #|
