@@ -149,7 +149,7 @@
 	 (n (length a1))
 	 (i1 (array-displacement img)))
     (dotimes (i n)
-      (setf (aref a1 i) (* 1d0 (aref i1 i))))
+      (setf (aref a1 i) (* .001d0 (aref i1 i))))
     a))
 
 ;; print 2 digits of the sigma sx and the same for the value x
@@ -160,7 +160,7 @@
 	       0 ;; if sigma > 1 
 	       (1+ sigma-digits))))
    (if (<= sigma-digits 0)
-       (format nil "~6d ~6d" (floor x) (floor sx))
+       (format nil "~4d ~4d" (floor x) (floor sx))
        (format nil (format nil "~~6,~df ~~6,~df" n n) x sx))))
 
 #+nil
@@ -172,20 +172,21 @@
  (print-with-error 10242.1213 1.02))
 
 
-
-(loop for k from 673 upto 700 do
- (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
- (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
-   (multiple-value-bind (theta sigmas)
-       (fit-gaussian :x0 x0 :y0 y0)
-     (destructuring-bind (x y a b s) (loop for e across theta collect e)
-      (destructuring-bind (sx sy sa sb ss) sigmas
-	(format t "~a~%" (list k
-			       (print-with-error x sx)
-			       (print-with-error y sy)
-			       (print-with-error a sa)
-			       (print-with-error b sb)
-			       (print-with-error s ss))))))))
+(time
+ (loop for k from 673 upto 688 do
+      (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
+      (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
+	(multiple-value-bind (theta sigmas fnorm)
+	    (fit-gaussian :x0 x0 :y0 y0)
+	  (destructuring-bind (x y a b s) (loop for e across theta collect e)
+	    (destructuring-bind (sx sy sa sb ss) sigmas
+	      (format t "~a~%" (list k
+				     (print-with-error x sx)
+				     (print-with-error y sy)
+				     (print-with-error a sa)
+				     (print-with-error b sb)
+				     (print-with-error s ss)
+				     (floor fnorm)))))))))
 
 
 #|
@@ -322,7 +323,7 @@ f_s  = - 2 arg/s ff
      
      (let ((fnorm (norm fvec))
 	   (fjnorm (make-array n :element-type 'double-float))
-	   (eps .05))
+	   (eps (* 9 .05)))
        
        ;; |x_i - x*_i| <= s_i    with x_j = x*_j for j/=i
        ;; implies that:
@@ -339,7 +340,8 @@ f_s  = - 2 arg/s ff
 	      (loop for i below n collect
 				    (* (sqrt eps)
 				       (/ fnorm
-					  (aref fjnorm i)))))))))
+					  (aref fjnorm i))))
+	      fnorm)))))
 #+NIL
 (progn
   (setf *rand* .001)
