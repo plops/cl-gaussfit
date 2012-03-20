@@ -135,9 +135,28 @@
 	  (return-from find-val-in-image (values j i)))))))
 
 ;; frame 673 ff contains a maximum not too close to border at x=2 y=7
-(let* ((frame (extract-frame *imgs* 673))
-       (ma (reduce #'max (array-displacement frame))))
-  (find-val-in-image frame ma))
+(defun locate-max-in-frame (stack frame-index)
+ (let* ((frame (extract-frame stack frame-index))
+	(ma (reduce #'max (array-displacement frame))))
+   (find-val-in-image frame ma)))
+#+nil
+(locate-max-in-frame *imgs* 673)
+
+(defun ub16->double-2 (img)
+  (let* ((a (make-array (array-dimensions img)
+			:element-type 'double-float))
+	 (a1 (array-storage-vector a))
+	 (n (length a1))
+	 (i1 (array-displacement img)))
+    (dotimes (i n)
+      (setf (aref a1 i) (* 1d0 (aref i1 i))))
+    a))
+
+(let ((k 680))
+ (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
+ (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
+   (fit-gaussian :x0 x0 :y0 y0)))
+
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
@@ -279,14 +298,14 @@ f_s  = - 2 arg/s ff
    (loop for i below (length ls) 
       sum (expt (elt ls i) 2))))
 
-(defun run2 ()
+(defun fit-gaussian (&key (x0 2) (y0 2) (a 1) (b 1) (sigma 1))
   (destructuring-bind (h w) (array-dimensions *img*)
    (let* ((m (* h w)) ;; pixels
 	  (n 5) ;; variables
 	  (x (make-array n :element-type 'double-float
 			 :initial-contents
 			 (mapcar #'(lambda (x) (* 1d0 x))
-				 '(2 2 1 1 1))))
+				 (list x0 y0 a b sigma))))
 	  (ldfjac m)
 	  (lwa (+ m (* 5 n)))
 	  (wa (make-array lwa :element-type 'double-float
@@ -357,7 +376,7 @@ f_s  = - 2 arg/s ff
   (time
    (dotimes (i 30)
      (run2))))
-
+#+nil
 (progn
   (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
   (let* ((nj 60)
@@ -372,7 +391,7 @@ f_s  = - 2 arg/s ff
 	(loop for k below (length *res*) do
 	     (setf (aref h j i k) (elt *res* k)))))
     (defparameter *scan4* h)))
-
+#+nil
 (with-open-file (s "/dev/shm/o.gp" :direction :output :if-does-not-exist :create
 		   :if-exists :supersede)
   (format s "#set yrange [0:1];
@@ -382,7 +401,7 @@ f_s  = - 2 arg/s ff
     (loop for i from j upto n do
 	 (format s "\"/dev/shm/o.dat\" u 1:~d w l~c" i (if (< i n) #\, #\;))))
   (format s "pause -1"))
-
+#+nil
 (with-open-file (s "/dev/shm/o.dat" :direction :output :if-does-not-exist :create
 		   :if-exists :supersede)
  (format 
