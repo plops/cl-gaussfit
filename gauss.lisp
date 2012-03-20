@@ -127,7 +127,9 @@
 			 :if-exists :supersede
 			 :if-does-not-exist :create)
 	(write-sequence head s))
-      (let* ((i1 (array-storage-vector img))
+      (let* ((i1 (make-array (array-total-size img)
+			     :element-type (array-element-type img)
+			     :displaced-to img))
 	     (n (length i1))
 	     (h1 (make-array n :element-type '(unsigned-byte 16))))
 	(dotimes (i n) ;; swap endian
@@ -141,14 +143,17 @@
   (values))
 
 (defun scale-log (img)
-  (let* ((i1 (array-storage-vector img))
-	(n (length i1))
-	(ma (reduce #'max img)))
+  (let* ((n (array-total-size img)) 
+	 (i1 (make-array n
+			 :element-type (array-element-type img)
+			 :displaced-to img))
+	(ma (1+ (reduce #'max i1))))
     (dotimes (i n)
       (let ((v (aref i1 i)))
        (setf (aref i1 i) (if (= v 0)
 			     0
-			     (* (expt 2 16) (log v) (/ (log ma)))))))
+			     (floor (* (expt 2 15) (log v))
+				    (log ma))))))
     img))
 
 (defun copy-img (img)
@@ -161,13 +166,11 @@
 			:element-type (array-element-type img)
 			:displaced-to c1)))
     c))
-#+nil
-(time
- (defparameter *bla*(copy-img *hists*)))
+
 
 #+nil
-(let ((a (copy-seq )))
- (write-fits "/dev/shm/hist.fits" *hists*))
+(time
+ (write-fits "/dev/shm/hist.fits" (scale-log (copy-img *hists*))))
 
 #+nil
 (time
