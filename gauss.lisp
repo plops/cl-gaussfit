@@ -46,6 +46,32 @@
 			     (* 256 (ldb (byte 8 0) (aref a i))))))
       b)))
 
+(declaim (optimize (speed 3) (safety 1) (debug 1)))
+
+(defun find-max (stack)
+  (declare (type (simple-array (unsigned-byte 16) 3) stack))
+  (let* ((ma 0)
+	 (a1 (array-storage-vector stack))
+	 (n (length a1)))
+    (declare (type (unsigned-byte 16) ma))
+   (dotimes (i n)
+     (setf ma (max ma (aref a1 i))))
+   ma))
+
+#+nil
+(time (find-max *imgs*))
+#+nil
+(time
+ (reduce #'max (array-storage-vector *imgs*)))
+
+(let* ((ma (1+ (reduce #'max ())))
+	(n 10)
+	(hist (make-array n :element-type 'fixnum)))
+   (dolist (e *imgs-avg*)
+     (incf (aref hist (floor (* n e) ma))))
+   (loop for j from 0 and i across hist collect
+	(list (floor (* ma (/ 1d0 n) j)) i)))
+
 ;; calculate average over each image
 (defparameter *imgs-avg*
   (destructuring-bind (z y x) (array-dimensions *imgs*)
