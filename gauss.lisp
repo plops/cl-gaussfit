@@ -60,17 +60,47 @@
 
 #+nil
 (time (find-max *imgs*))
+
+(defun make-histograms (stack)
+  (declare (type (simple-array (unsigned-byte 16) 3) stack))
+  (destructuring-bind (z y x) (array-dimensions stack)
+    (declare (type fixnum z y x))
+    (let* ((ma (1+ (find-max stack)))
+	   (n 500)
+	   (ni 100) ;; combine ni=100 images into histogram
+	   (stack1 (array-storage-vector stack))
+	   (hist (make-array (list (floor z ni) n) :element-type 'fixnum)))
+       (declare (type (simple-array fixnum 2) hist)
+		(type fixnum n ni ma))
+       (dotimes (k z) 
+	 (let ((ko (floor k ni)))
+	   (dotimes (j y)
+	     (dotimes (i x) 
+	       (incf (aref hist ko
+			   (floor (* n (aref stack k j i))
+				  ma)))))))
+       hist)))
 #+nil
 (time
- (reduce #'max (array-storage-vector *imgs*)))
+ (defparameter *hists* (make-histograms *imgs*)))
 
-(let* ((ma (1+ (reduce #'max ())))
-	(n 10)
-	(hist (make-array n :element-type 'fixnum)))
-   (dolist (e *imgs-avg*)
-     (incf (aref hist (floor (* n e) ma))))
-   (loop for j from 0 and i across hist collect
-	(list (floor (* ma (/ 1d0 n) j)) i)))
+;; definition of fits file
+;; ftp://nssdc.gsfc.nasa.gov/pub/fits
+
+#+nil
+(time
+ (defparameter *hists*
+   (destructuring-bind (z y x) (array-dimensions *imgs*)
+     (let* ((ma (1+ (find-max *imgs*)))
+	    (n 100)
+	    (ni 100) ;; combine 100 images into histogram
+	    (hist (make-array (list (floor z ni) n) :element-type 'fixnum)))
+       (dotimes (k z)
+	 (dotimes (j y)
+	   (dotimes (i x)
+	     (incf (aref hist (floor k ni) 
+			 (floor (* n (aref *imgs* k j i)) ma))))))
+       hist))))
 
 ;; calculate average over each image
 (defparameter *imgs-avg*
