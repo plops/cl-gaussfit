@@ -310,6 +310,17 @@
       (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
 
+(defun img-mask (img mask)
+  (let* ((a1 (make-displaced-array img))
+	 (b1 (make-displaced-array mask))
+	 (c (make-array (array-dimensions img)
+			:element-type 'single-float))
+	 (c1 (make-displaced-array c)))
+    (dotimes (i (length a1))
+      (when (aref b1 i)
+	(setf (aref c1 i) (aref a1 i))))
+    c))
+
 
 
 ;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
@@ -386,17 +397,17 @@
 			:initial-element t)))
      (dolist (p points)
        (destructuring-bind (y x val) p
-	 (dotimes (j 9) 
-	   (dotimes (i 9)
-	     (let ((xx (+ x i))
-		   (yy (+ y j)))
-	       (when (and (< 0 xx w)
-			  (< 0 yy h))
-		 (setf (aref a yy xx) nil)))))))
+	 (loop for j from -5 upto 5 do
+	   (loop for i from -5 upto 5 do
+		(let ((xx (+ x i))
+		      (yy (+ y j)))
+		  (when (and (< 0 xx w)
+			     (< 0 yy h))
+		    (setf (aref a yy xx) nil)))))))
      a)))
 
 
-;; mask 9x9 area around bright maxima
+;; mask 10x10 area around bright maxima
 #+nil
 (let* ((ma (loop for e in *blur* maximize
 	       (reduce #'max (make-displaced-array e))))
@@ -404,16 +415,20 @@
 	       (reduce #'min (make-displaced-array e))))
       (n 40)
       (hist (make-array n :element-type 'fixnum))
-      ee qq) 
+      ee qq
+      masked-images) 
   (loop for i below (length *blur*) collect
        (let ((e (elt *blur* i))
 	    (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
+	 (push (img-mask (copy-img e) m) masked-images)
 	 (multiple-value-setq (ee qq)
 	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
-  (format t "~{~{~7,3f ~5,2f~%~}~} bla"
+  (format t "~{~{~7,3f ~5,2f~%~}~} 10x10"
 	  (loop for i across hist and g in qq
 	     collect (list g 
-			   (if (= 0 i) 0 i)))))
+			   (if (= 0 i) 0 i))))
+  (defparameter *blur-10x10masked* masked-images)
+  (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images)))
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
