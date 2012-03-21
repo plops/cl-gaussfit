@@ -383,18 +383,23 @@
    (loop for e in *blur* collect
 	(let* ((c (copy-img e))
 	       (ma (find-local-maxima c))
-	       (big-ma (remove-if #'(lambda (e) (< (third e) .006))
+	       (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* (* .5 *dog-stddev*))))
 				  ma)))
 	  (push big-ma *blur-big-ma*)
 	  (mark-points c big-ma))))
  (setf *blur-big-ma* (reverse *blur-big-ma*))
  (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*)))
 
-(defun draw-mask (img points)
+(defun draw-mask (img points &key (mask-border 4))
   (destructuring-bind (h w) (array-dimensions img)
    (let ((a (make-array (array-dimensions img)
 			:element-type 'boolean
-			:initial-element t)))
+			:initial-element nil)))
+     (unless mask-border
+       (setf mask-border 0))
+     (loop for j from mask-border below (- h mask-border) do
+	  (loop for i from mask-border below (- w mask-border) do
+	       (setf (aref a j i) t)))
      (dolist (p points)
        (destructuring-bind (y x val) p
 	 (loop for j from -5 upto 5 do
