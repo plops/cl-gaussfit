@@ -301,10 +301,10 @@
   (let* ((a1 (make-displaced-array a))
 	 (b1 (make-displaced-array b))
 	 (c (make-array (array-dimensions a)
-			:element-type 'double-float))
+			:element-type 'single-float))
 	 (c1 (make-displaced-array c)))
     (dotimes (i (length a1))
-      (setf (aref c1 i) (* 1d0 (funcall op (aref a1 i) (aref b1 i)))))
+      (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
 
 
@@ -315,10 +315,17 @@
 #+nil
 (progn
  (defparameter *blur*
-   (blur-float
-    (ub16->single-2
-     (extract-frame *imgs* 673)) 
-    1.2 1.2 1e-4))
+   (let ((s 1.3)
+	 (s2 1.5))
+    (img-op #'-
+	    (blur-float
+	     (ub16->single-2
+	      (extract-frame *imgs* 673)) 
+	     s s 1e-4)
+	    (blur-float
+	     (ub16->single-2
+	      (extract-frame *imgs* 673)) 
+	     s2 s2 1e-4))))
  (write-fits "/dev/shm/o2.fits" *blur*))
 
 (defun blur-float (img sigma-x sigma-y accuracy)
