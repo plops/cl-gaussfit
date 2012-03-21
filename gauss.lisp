@@ -456,17 +456,23 @@
 ;; unfortunately the above didn't work. so i probably have to convolve
 ;; the images first
 
-(let ((i 10))
-  (loop while (< i 12) do (incf i))
-  i)
-
-(array-dimension 
- (make-array (list 2 3))
- 0)
-
 ;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
+(defun blur-1-direction (img sigma accuracy x-direction)
+  (destructuring-bind (h w) (array-dimensions img)
+    (let* ((length (if x-direction w h))
+	   (point-inc (if x-direction 1 w))
+	   (line-inc (if x-direction w 1))
+	   (line-from 0)
+	   (line-to (if x-direction h w))
+	   (write-from 0)
+	   (write-to (if x-direction w h))
+	   (gauss-kernel (make-gaussian-kernel sigma accuracy))
+	   (kradius (length gauss-kernel))
+	   (cache (make-array length :element-type 'single-float))
+	   ))))
+
 (defun convolve-line (in pixels kernel write-from write-to point0 point-inc)
-  (declare (type (simple-array double-float 2) kernel))
+  (declare (type (simple-array single-float 2) kernel))
   (macrolet ((kern (i)
 	       `(aref kernel 0 ,i))
 	     (kern-sum (i)
@@ -476,7 +482,7 @@
 		     (let ((v 0))
 		       (when (<= 0 (- i k)) 
 			 (incf v (aref in (- i k))))
-		       (when (<= (+ i k) len) 
+		       (when (<= (+ i k) len) ;; i think <= is correct
 			 (incf v (aref in (+ i k))))
 		       (incf res (* (kern k) v)))))
 	     (do-updates ()
@@ -486,7 +492,11 @@
 	     (with-res (&body body)
 	       `(let ((res (* (aref in i)
 			      (kern 0))))
-		  
+		  (when (< i kradius)
+		    (incf res (* (kern-sum i) first)))
+		  (when (<= len (+ i kradius)) 
+		    (incf res (* (kern-sum (- len i 1))
+				 last)))
 		  ,@body)))
     (let* ((len (length in))
 	   (first (aref in 0)) ;; replace out-of-edge with nearest edge pixel
@@ -497,12 +507,7 @@
 	   (i write-from))
       (loop while (< i first-part) ;; while sum includes pixels < 0
 	 do 
-	   (let ((res (* (aref in i) (kern 0))))
-	     (incf res (* (kern-sum i)
-			  first))
-	     (when (< len (+ i kradius))
-	       (incf res (* (kern-sum (- len i 1))
-			    last)))
+	   (with-res
 	     (do-inside)
 	     (do-updates)))
    
@@ -518,27 +523,22 @@
 
       (loop while (< i write-to) ;; sum includes pixels >= len
 	 do
-	   (let ((res (* (aref in i) (kern 0))))
-	     (when (< i kradius)
-	       (incf res (* (kern-sum i) first)))
-	     (when (<= len (+ i kradius)) ;; why is it <= here and < in the top loop
-	       (incf res (* (kern-sum (- len i 1))
-			    last)))
-	     (do-inside)
+	   (with-res
+	       (do-inside)
 	     (do-updates)))))
   (values))
 
-(defun make-gaussian-kernel (&key (sigma .6d0) (accuracy 1d-3))
+(defun make-gaussian-kernel (&key (sigma .6) (accuracy .001))
   "sigma .. radius of decay to 1/e in pixels
 accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
   (let* ((n (1+ (ceiling (* sigma (sqrt (* -2 (log accuracy)))))))
-	 (s (/ 1d0 (* sigma sigma)))
-	 (a (make-array (list 2 n) :element-type 'double-float)))
+	 (s (/ 1s0 (* sigma sigma)))
+	 (a (make-array (list 2 n) :element-type 'single-float)))
     (dotimes (i n)
       (setf (aref a 0 i) (exp (* -.5 i i s))))
     (when (< 3 n) ;; edge correction to avoid cutoff at finite value
       ;; second order polynomial is zero at first out-of-kernel pixel
-      (let* ((sqrt-slope double-float-positive-infinity)
+      (let* ((sqrt-slope single-float-positive-infinity)
 	     (r (loop named slope for r from (1- n) downto (floor n 2) do
 		     (let ((v (/ (sqrt (aref a 0 r))
 				 (- n r))))
@@ -547,10 +547,9 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 			   (return-from slope r))))))
 	(loop for r1 from (+ r 2) below n do
 	     (setf (aref a 0 r1) (expt (* sqrt-slope (- n r1)) 2)))))
-    (let ((s (/ 1d0 (+ (aref a 0 0)
+    (let ((s (/ 1s0 (+ (aref a 0 0)
 		       (* 2 (loop for i from 1 below n sum (aref a 0 i))))))
 	  (rsum (+ .5 (* .5 s (aref a 0 0)))))
-      (format t "rsum = ~a~%" (list rsum (/ s) (aref a 0 0)))
       (loop for i below n do
 	   (let ((v (* s (aref a 0 i))))
 	    (setf (aref a 0 i) v)
@@ -561,7 +560,7 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 (make-gaussian-kernel)
 #+nil
 (format t "~a~%"
- (make-gaussian-kernel :sigma 5.4 :accuracy 1d-2))
+ (make-gaussian-kernel :sigma 5.4 :accuracy 1e-2))
 
 ;; calculate average over each image
 #+nil
