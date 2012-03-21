@@ -119,9 +119,15 @@
        (ensure-80-chars "END"))
      (format nil "~2880A" s))))
 
+#+nil
+(write-fits "/dev/shm/o.fits" *blur*)
+
 (defun write-fits (filename img)
   (destructuring-bind (h w) (array-dimensions img)
-    (let ((head (generate-fits-header :w w :h h)))
+    (let ((head (generate-fits-header :bits (ecase (array-element-type img)
+					      (single-float -32)
+					      (unsigned-byte 16))
+				      :w w :h h)))
       (with-open-file (s filename
 			 :direction :output
 			 :if-exists :supersede
@@ -132,6 +138,7 @@
 			     :displaced-to img))
 	     (n (length i1))
 	     (h1 (make-array n :element-type '(unsigned-byte 16))))
+	#+nil
 	(dotimes (i n) ;; swap endian
 	  (setf (aref h1 i) (+ (ldb (byte 8 8) (aref i1 i))
 			       (* 256 (ldb (byte 8 0) (aref i1 i))))))
@@ -157,7 +164,7 @@
     img))
 
 (defun copy-img (img)
-  (let* ((i1 (array-storage-vector img))
+  (let* ((i1 (make-displaced-array img))
 	 (d1 (make-array (array-dimensions i1)
 			 :element-type (array-element-type i1)
 			 :displaced-to i1))
@@ -457,6 +464,22 @@
 ;; the images first
 
 ;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
+
+
+#+nil
+(defparameter *blur*
+ (blur-float
+  (ub16->single-2
+   (extract-frame *imgs* 673)) 
+  1.6 1.6 .002))
+
+(defun blur-float (img sigma-x sigma-y accuracy)
+  (when (< 0 sigma-x)
+    (blur-1-direction img sigma-x accuracy T))
+  (when (< 0 sigma-y)
+    (blur-1-direction img sigma-y accuracy nil))
+  img)
+
 (defun blur-1-direction (img sigma accuracy x-direction)
   (destructuring-bind (h w) (array-dimensions img)
     (let* ((length (if x-direction w h))
@@ -468,7 +491,7 @@
 	   (write-from 0)
 	   (write-to (if x-direction w h))
 	   (gauss-kernel (make-gaussian-kernel :sigma sigma :accuracy accuracy))
-	   (kradius (length gauss-kernel))
+	   (kradius (array-dimension gauss-kernel 1))
 	   (cache (make-array length :element-type 'single-float))
 	   (pixel0 (* line-from line-inc))
 	   (read-from (max 0 (- write-from kradius)))
@@ -493,7 +516,7 @@
 		     (let ((v 0))
 		       (when (<= 0 (- i k)) 
 			 (incf v (aref in (- i k))))
-		       (when (<= (+ i k) len) ;; i think <= is correct
+		       (when (< (+ i k) len)
 			 (incf v (aref in (+ i k))))
 		       (incf res (* (kern k) v)))))
 	     (do-updates ()
@@ -505,7 +528,7 @@
 			      (kern 0))))
 		  (when (< i kradius)
 		    (incf res (* (kern-sum i) first)))
-		  (when (<= len (+ i kradius)) 
+		  (when (<= len (+ i kradius)) ;; i think <= is correct in both loops 
 		    (incf res (* (kern-sum (- len i 1))
 				 last)))
 		  ,@body)))
@@ -757,6 +780,16 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 	 (i1 (array-displacement img)))
     (dotimes (i n)
       (setf (aref a1 i) (* .001d0 (aref i1 i))))
+    a))
+
+(defun ub16->single-2 (img)
+  (let* ((a (make-array (array-dimensions img)
+			:element-type 'single-float))
+	 (a1 (array-storage-vector a))
+	 (n (length a1))
+	 (i1 (make-displaced-array img)))
+    (dotimes (i n)
+      (setf (aref a1 i) (* .001s0 (aref i1 i))))
     a))
 
 ;; print 2 digits of the sigma sx and the same for the value x
