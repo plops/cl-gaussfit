@@ -440,7 +440,16 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 	    (setf (aref a 1 i) rsum))))
     a))
 #+nil
-(make-gaussian-kernel)
+(make-gaussian-kernel :sigma 1.2 :accuracy 1e-4)
+;; i compiled the java code in c and this is the result
+;; 0 sum 0.332452 rsum 0.333774
+;; 1 sum 0.234927 rsum 0.098847
+;; 2 sum 0.082898 rsum 0.015950
+;; 3 sum 0.014607 rsum 0.001343
+;; 4 sum 0.001285 rsum 0.000058
+;; 5 sum 0.000056 rsum 0.000001
+;; 6 sum 0.000001 rsum 0.000000
+
 #+nil
 (make-gaussian-kernel :sigma 5.4 :accuracy 1e-4)
 
