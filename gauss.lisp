@@ -318,9 +318,6 @@
 	   (extract-frame *imgs* i)
 	   (extract-frame *imgs* (+ i 30)))))
 
-)
-
-
 ;; i now want to separate background and signal. ideally i would just
 ;; create masks to select background, but i don't see a robust way to
 ;; do that. instead i will subtract images. i expect the histogram of
@@ -442,9 +439,6 @@
 	   (extract-frame *imgs* i)
 	   (extract-frame *imgs* (+ i 30)))))
 
-)
-
-
 ;; i now want to separate background and signal. ideally i would just
 ;; create masks to select background, but i don't see a robust way to
 ;; do that. instead i will subtract images. i expect the histogram of
@@ -459,6 +453,36 @@
 ;; background, so that i can select events that are brighter than,
 ;; i.e. 5 sigma
 
+;; unfortunately the above didn't work. so i probably have to convolve
+;; the images first
+
+;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
+
+(defun make-gaussian-kernel (&key (sigma .6d0) (accuracy 1d-3))
+  "sigma .. radius of decay to 1/e in pixels
+accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
+  (let* ((n (1+ (ceiling (* sigma (sqrt (* -2 (log accuracy)))))))
+	 (s (/ 1d0 (* sigma sigma)))
+	 (a (make-array n :element-type 'double-float)))
+    (dotimes (i n)
+      (setf (aref a i) (exp (* -.5 i i s))))
+    (when (< 3 n) ;; edge correction to avoid cutoff at finite value
+      ;; second order polynomial is zero at first out-of-kernel pixel
+      (let* ((sqrt-slope double-float-positive-infinity)
+	     (r (loop named slope for r from (1- n) downto (floor n 2) do
+		     (let ((v (/ (sqrt (aref a r))
+				 (- n r))))
+		       (if (< v sqrt-slope)
+			   (setf sqrt-slope v)
+			   (return-from slope r))))))
+	(loop for r1 from (+ r 2) below n do
+	     (setf (aref a r1) (expt (* sqrt-slope (- n r1)) 2)))))
+    (let ((s (/ 1d0 (loop for i below n sum (aref a i)))))
+      (dotimes (i n)
+	(setf (aref a i) (* s (aref a i)))))
+    a))
+#+nil
+(make-gaussian-kernel :sigma 12.4 :accuracy 1d-4)
 
 ;; calculate average over each image
 #+nil
@@ -562,7 +586,7 @@
 #+nil
 (time
  (defparameter *subtr*
-   (loop for i below 2000 collect
+   (loop for i below 28000 collect
 	(img-op #'-
 		(extract-frame *imgs* i)
 		(extract-frame *imgs* (+ i 300))))))
@@ -588,7 +612,7 @@
 
 #+nil
 (time
- (let* ((n 30)
+ (let* ((n 300)
 	(mi (1- (floor (loop for e in *subtr* minimize
 			    (reduce #'min (make-displaced-array e))))))
 	(ma (1+ (floor (loop for e in *subtr* maximize
@@ -730,9 +754,11 @@ f_s  = - 2 arg/s ff
 	     (dotimes (i w)
 	       (let* ((dx (- (* 1d0 i) xx))
 		      (dy (- (* 1d0 j) yy))
-		      (s2 (/ (* s s)))
+		      (s2 (/ (* s s))) ;; I just realize that my
+				       ;; variable is not sigma:
+				       ;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
 		      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-		      (e (exp arg))
+		      (e (exp arg)) 
 		      (p (+ i (* w j))))
 		 (setf (deref fvec p)
 		       (+ (- (aref *img* j i)) b (* a e)))))))
