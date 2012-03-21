@@ -364,7 +364,7 @@
 	    mean
 	    (sqrt var))))
 
-;; remove maxima that are not brighter than stddev + mean 
+;; remove maxima that are not brighter than .006
 #+nil
 (progn
   (defparameter *blur-big-ma* ())
@@ -372,7 +372,7 @@
    (loop for e in *blur* collect
 	(let* ((c (copy-img e))
 	       (ma (find-local-maxima c))
-	       (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* *dog-stddev*)))
+	       (big-ma (remove-if #'(lambda (e) (< (third e) .006))
 				  ma)))
 	  (push big-ma *blur-big-ma*)
 	  (mark-points c big-ma))))
@@ -410,7 +410,7 @@
 	    (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
 	 (multiple-value-setq (ee qq)
 	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
-  (format t "~{~{~7,3f ~5,2f~%~}~}"
+  (format t "~{~{~7,3f ~5,2f~%~}~} bla"
 	  (loop for i across hist and g in qq
 	     collect (list g 
 			   (if (= 0 i) 0 i)))))
