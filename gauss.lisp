@@ -347,6 +347,38 @@
 	      #+nil (mark-points dog (find-local-maxima dog))))))
    (write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
 
+
+(defun get-statistics (pic-list &key mask-list)
+  (if mask-list
+      (let* ((mean (let ((sum 0)
+			 (n 0))
+		     (loop for e in pic-list and m in mask-list do
+			  (let ((e1 (make-displaced-array e))
+				(m1 (make-displaced-array m)))
+			    (loop for g across e1 and mask across m1 
+			       when mask
+			       do (incf sum g)
+				 (incf n))))
+		     (* sum (/ 1d0 n))))
+	     (var (let ((n 0)
+			(sum 0)) 
+		    (loop for e in pic-list and m in mask-list do
+			 (let ((e1 (make-displaced-array e))
+			       (m1 (make-displaced-array m)))
+			   (loop for g across e1 and mask across m1 
+			      when mask
+			      do (incf n) 
+				(incf sum (expt (- g mean) 2)))))
+		    (* sum (/ 1d0 n)))))
+	(values mean (sqrt var)))
+      (let* ((mean (loop for e in pic-list sum
+			(* (/ 1d0 (array-total-size e)) (reduce #'+ (make-displaced-array e)))))
+	     (var (loop for e in pic-list sum
+		       (* (/ 1d0 (array-total-size e))
+			  (loop for g across (make-displaced-array e) sum
+			       (- (* g g) (* mean mean)))))))
+	(values mean (sqrt var)))))
+
 ;; find histogram and statistics of difference of gaussian images
 #+nil
 (time
@@ -432,8 +464,8 @@
 	masked-images) 
    (loop for i below (length *blur*) collect
 	(let ((e (elt *blur* i))
-	   
-   (m (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0)))
+	      
+	      (m (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0)))
 	  (push (img-mask (copy-img e) m) masked-images)
 	  (multiple-value-setq (ee qq)
 	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
@@ -445,6 +477,14 @@
 			     (if (= 0 i) 0 i)))))
    (defparameter *blur-10x10masked* masked-images)
    (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images))))
+
+#+nil
+(time
+ (format t "~A~%"
+  (let ((mask-list
+	 (loop for i below (length *blur*) collect
+	      (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0))))
+    (multiple-value-list (get-statistics *blur* :mask-list mask-list)))))
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
