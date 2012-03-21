@@ -325,7 +325,7 @@
 		(dog (img-op #'-
 			     (blur-float
 			      (ub16->single-2
-			       (extract-frame *imgs* k)) 
+			       (extract-frame *imgs* k))
 			      s s 1e-4)
 			     (blur-float
 			      (ub16->single-2
@@ -336,6 +336,7 @@
  (write-fits "/dev/shm/o.fits" (img-list->stack *blur*)))
 
 ;; find histogram and statistics of difference of gaussian images
+#+nil
 (destructuring-bind (h w) (array-dimensions (first *blur*))
   (let* ((ma (loop for e in *blur* maximize
 		  (reduce #'max (make-displaced-array e))))
@@ -354,6 +355,8 @@
     (loop for e in *blur* do
 	 (multiple-value-setq (e q)
 	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
+    (defparameter *dog-mean* mean)
+    (defparameter *dog-stddev* (sqrt var))
     (format t "~{~{~7,3f ~5,2f~%~}~} mean=~a stddev=~5,3f"
 	    (loop for i across hist and g in q 
 	       collect (list g 
@@ -361,6 +364,17 @@
 	    mean
 	    (sqrt var))))
 
+;; remove maxima that are not brighter than stddev + mean 
+#+nil
+(progn
+ (defparameter *blur-ma*
+   (loop for e in *blur* collect
+	(let* ((c (copy-img e))
+	       (ma (find-local-maxima c))
+	       (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* *dog-stddev*)))
+				  ma)))
+	  (mark-points c big-ma))))
+ (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*)))
 
 
 (defun find-local-maxima (im)
