@@ -482,7 +482,12 @@
 	     (do-updates ()
 	       `(progn (setf (aref pixels p) res)
 		       (incf p point-inc)
-		       (incf i))))
+		       (incf i)))
+	     (with-res (&body body)
+	       `(let ((res (* (aref in i)
+			      (kern 0))))
+		  
+		  ,@body)))
     (let* ((len (length in))
 	   (first (aref in 0)) ;; replace out-of-edge with nearest edge pixel
 	   (last (aref in (1- len)))
@@ -493,9 +498,11 @@
       (loop while (< i first-part) ;; while sum includes pixels < 0
 	 do 
 	   (let ((res (* (aref in i) (kern 0))))
-	     (incf res (* first (kern-sum i)))
+	     (incf res (* (kern-sum i)
+			  first))
 	     (when (< len (+ i kradius))
-	       (incf res (* last (kern-sum (- len i 1)))))
+	       (incf res (* (kern-sum (- len i 1))
+			    last)))
 	     (do-inside)
 	     (do-updates)))
    
@@ -514,8 +521,9 @@
 	   (let ((res (* (aref in i) (kern 0))))
 	     (when (< i kradius)
 	       (incf res (* (kern-sum i) first)))
-	     (when (<= (+ i kradius) len)
-	       (incf res (* (kern-sum (- len i 1)) last)))
+	     (when (<= len (+ i kradius)) ;; why is it <= here and < in the top loop
+	       (incf res (* (kern-sum (- len i 1))
+			    last)))
 	     (do-inside)
 	     (do-updates)))))
   (values))
