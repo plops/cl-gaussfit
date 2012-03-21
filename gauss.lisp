@@ -313,10 +313,10 @@
   (let* ((a1 (make-displaced-array a))
 	 (b1 (make-displaced-array b))
 	 (c (make-array (array-dimensions a)
-			:element-type '(signed-byte 16)))
+			:element-type 'single-float))
 	 (c1 (make-displaced-array c)))
     (dotimes (i (length a1))
-      (setf (aref c1 i) (funcall op (aref a1 i) (aref b1 i))))
+      (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
 
 (defun img-mask (img mask)
@@ -340,16 +340,16 @@
  (progn
    (defparameter *blur*
      (let ((imgs nil))
-       (loop for k from 673 upto 1688 collect
+       (loop for k from 673 upto 10688 collect
 	    (let* ((s 1.3)
 		   (s2 1.5)
 		   (dog (img-op #'-
 				(blur-float
-				 (ub16->sb16
+				 (ub16->single-2
 				  (extract-frame *imgs* k))
 				 s s 1e-4)
 				(blur-float
-				 (ub16->sb16
+				 (ub16->single-2
 				  (extract-frame *imgs* k)) 
 				 s2 s2 1e-4))))
 	      dog
@@ -387,7 +387,7 @@
 	     (mean (/ (loop for e in pic-list sum
 			   (reduce #'+ (make-displaced-array e)))
 		      n))
-	     (s1 (loop for e in pic-list sum
+	     (s1 (loop for e in pic-list sums 
 		      (loop for g across (make-displaced-array e) sum
 			   (expt (- g mean) 2))))
 	     (s2 (loop for e in pic-list sum
@@ -408,7 +408,7 @@
 	  (mi (loop for e in *blur* minimize
 		   (reduce #'min (make-displaced-array e))))
 	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 1200)
+	  (n 300)
 	  (hist (make-array n :element-type 'fixnum))
 	  ee q)
      (loop for e in *blur* do
@@ -429,7 +429,7 @@
 	      *dog-mean*
 	      *dog-stddev*)))))
 
-;; remove maxima that are not brighter than .05 stddev
+;; remove maxima that are not brighter than .5 stddev
 #+nil
 (time
   (progn
@@ -440,8 +440,8 @@
 		  (ma (find-local-maxima c))
 		  (big-ma (remove-if #'(lambda (e) 
 					 (< (third e)
-					    (+ *dog-mean-2* 
-					       (* 5 *dog-stddev-2*))))
+					    (+ *dog-mean* 
+					       (* .5 *dog-stddev*))))
 				     ma)))
 	     (push big-ma *blur-big-ma*)
 	     (mark-points c big-ma))))
@@ -508,6 +508,25 @@
     (multiple-value-setq (*dog-mean-2*
 			  *dog-stddev-2*) (get-statistics *blur* :mask-list mask-list)))))
 
+;; select maxima again, but use better estimate of background stddev
+#+nil
+(time
+  (progn
+    (defparameter *blur-big-ma-2* ())
+    (defparameter *blur-ma-2*
+      (loop for e in *blur* collect
+	   (let* ((c (copy-img e))
+		  (ma (find-local-maxima c))
+		  (big-ma (remove-if #'(lambda (e) 
+					 (< (third e)
+					    (+ *dog-mean-2* 
+					       (* 3 *dog-stddev-2*))))
+				     ma)))
+	     (push big-ma *blur-big-ma-2*)
+	     (mark-points c big-ma))))
+    (setf *blur-big-ma-2* (reverse *blur-big-ma-2*))
+    (write-fits "/dev/shm/blur-ma-2.fits" (img-list->stack *blur-ma-2*))))
+
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
     (macrolet 
@@ -521,7 +540,7 @@
 			   (destructuring-bind (x y) p
 			     (unless (= 0 x y)
 			       ;; j is upside down
-			       `(< (aref im (- j ,y) (+ i ,x)) 
+			       `(<= (aref im (- j ,y) (+ i ,x)) 
 				   (aref im j i))))))))))
       (let ((res ())
 	    (m 1)) 
@@ -622,7 +641,7 @@
 	   (write-to (if x-direction w h))
 	   (gauss-kernel (make-gaussian-kernel :sigma sigma :accuracy accuracy))
 	   (kradius (array-dimension gauss-kernel 1))
-	   (cache (make-array length :element-type '(signed-byte 16)))
+	   (cache (make-array length :element-type 'single-float))
 	   (pixel0 (* line-from line-inc))
 	   (read-from (max 0 (- write-from kradius)))
 	   (read-to (min length (+ write-to kradius))))
@@ -650,7 +669,7 @@
 			 (incf v (aref in (+ i k))))
 		       (incf res (* (kern k) v)))))
 	     (do-updates ()
-	       `(progn (setf (aref pixels p) (coerce (round res) '(signed-byte 16)))
+	       `(progn (setf (aref pixels p) (* 1s0 res))
 		       (incf p point-inc)
 		       (incf i)))
 	     (with-res (&body body)
