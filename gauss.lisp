@@ -362,20 +362,23 @@
 		       (loop for g across (make-displaced-array e) sum
 			    (- (* g g) (* mean mean))))))
 	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 40)
+	  (n 400)
 	  (hist (make-array n :element-type 'fixnum))
-	  e q)
+	  ee q)
      (loop for e in *blur* do
-	  (multiple-value-setq (e q)
+	  (multiple-value-setq (ee q)
 	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
      (defparameter *dog-mean* mean)
      (defparameter *dog-stddev* (sqrt var))
-     (format t "~{~{~7,3f ~5,2f~%~}~} mean=~a stddev=~5,3f"
-	     (loop for i across hist and g in q 
-		collect (list g 
-			      (if (= 0 i) 0 i)))
-	     mean
-	     (sqrt var)))))
+     (with-open-file (s "/dev/shm/all.dat" :direction :output
+			:if-exists :supersede
+			:if-does-not-exist :create)
+      (format s "~{~{~7,3f ~5,2f~%~}~} # mean=~a stddev=~5,3f~%"
+	      (loop for i across hist and g in q 
+		 collect (list g 
+			       (if (= 0 i) 0 i)))
+	      mean
+	      (sqrt var))))))
 
 ;; remove maxima that are not brighter than .5 stddev
 #+nil
@@ -428,7 +431,8 @@
 	masked-images) 
    (loop for i below (length *blur*) collect
 	(let ((e (elt *blur* i))
-	      (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
+	   
+   (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
 	  (push (img-mask (copy-img e) m) masked-images)
 	  (multiple-value-setq (ee qq)
 	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
@@ -620,7 +624,6 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 
 (defun calc-hist (img &key (n 30) minv maxv (append nil) mask)
   (let* ((i1 (make-displaced-array img))
-	 (mask1 (make-displaced-array mask))
 	 (ma (if maxv maxv (1+ (ceiling (reduce #'max i1)))))
 	 (mi (if minv minv (1- (floor (reduce #'min i1)))))
 	 (hist (if append
@@ -633,10 +636,11 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
     ;; x = n (g-mi)/(ma-mi)
     ;; (x (ma-mi) / n)+mi = g
     (if mask
-	(dotimes (i (length i1))
-	  (when (aref mask1 i)
-	   (incf (aref hist (floor (* n (- (aref i1 i) mi))
-				   (- ma mi))))))
+	(let ((mask1 (make-displaced-array mask)))
+	 (dotimes (i (length i1))
+	   (when (aref mask1 i)
+	     (incf (aref hist (floor (* n (- (aref i1 i) mi))
+				     (- ma mi)))))))
 	(dotimes (i (length i1))
 	  (incf (aref hist (floor (* n (- (aref i1 i) mi))
 				  (- ma mi))))))
