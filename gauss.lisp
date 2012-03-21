@@ -104,59 +104,62 @@
 
 ;; offset in example file #x1680 = 5760 = 2*2880
 
-(defun generate-fits-header (&key (bits 16) (w 484) (h 400))
- (let* ((dat `((SIMPLE T)
-	       (BITPIX ,bits)
-	       (NAXIS 2)
-	       (NAXIS1 ,w)
-	       (NAXIS2 ,h))))
-   (let* ((head (with-output-to-string (s)
-		  (labels ((ensure-80-chars (str)
-			(format s "~80A" str)))
-		    (dolist (e dat)
-		      (ensure-80-chars ;; the imagej writer puts = at 9th position and value starts at 11
-		       (format nil "~8A= ~A" (first e) (second e))))
-		    (ensure-80-chars "END"))
-		  s))
-	  (pad (make-array (- 2880 (length head))
-			   :element-type 'character
-			   :initial-element #\Space)))
-     (concatenate 'string head pad))))
+(defun generate-fits-header (img &key (bits 16))
+  (let* ((dims (array-dimensions img))
+	 (dat `((SIMPLE T)
+		(BITPIX ,bits)
+		(NAXIS ,(length dims))
+		(NAXIS1 ,(first (last dims)))
+		(NAXIS2 ,(first (last (butlast dims))))
+		,(when (= (length dims) 3)
+		       (list 'NAXIS3 (first dims))))))
+    (let* ((head (with-output-to-string (s)
+		   (labels ((ensure-80-chars (str)
+			      (format s "~80A" str)))
+		     (dolist (e dat)
+		       (when e 
+			 (ensure-80-chars ;; the imagej writer puts = at 9th position and value starts at 11
+			  (format nil "~8A= ~A" (first e) (second e)))))
+		     (ensure-80-chars "END"))
+		   s))
+	   (pad (make-array (- 2880 (length head))
+			    :element-type 'character
+			    :initial-element #\Space)))
+      (concatenate 'string head pad))))
 
 (defun write-fits (filename img)
-  (destructuring-bind (h w) (array-dimensions img)
-    (let ((head (generate-fits-header :bits (ecase (array-element-type img)
-					      (single-float -32)
-					      ((unsigned-byte 16) 16))
-				      :w w :h h)))
+  (let ((head (generate-fits-header img
+				    :bits (ecase (array-element-type img)
+					    (single-float -32)
+					    ((unsigned-byte 16) 16)))))
+    (with-open-file (s filename
+		       :direction :output
+		       :if-exists :supersede
+		       :if-does-not-exist :create)
+      (write-sequence head s))
+    (let* ((i1 (array-displacement (copy-img img)))
+	   (sap (sb-sys:vector-sap i1))
+	   (n (array-total-size img))
+	   (h1 (make-array n :element-type '(unsigned-byte 32)))
+	   (h2 (make-array n :element-type '(unsigned-byte 32))))
+      (dotimes (i n)
+	(setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
+      (ecase (array-element-type img) ;; swap endian
+	(single-float (dotimes (i n) 
+			(setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+			      (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
+			      (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+			      (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
+	((unsigned-byte 16) (dotimes (i n) 
+			      (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+				    (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))
+				    (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+				    (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))))))
       (with-open-file (s filename
+			 :element-type '(unsigned-byte 32)
 			 :direction :output
-			 :if-exists :supersede
-			 :if-does-not-exist :create)
-	(write-sequence head s))
-      (let* ((i1 (array-displacement (copy-img img)))
-	     (sap (sb-sys:vector-sap i1))
-	     (n (array-total-size img))
-	     (h1 (make-array n :element-type '(unsigned-byte 32)))
-	     (h2 (make-array n :element-type '(unsigned-byte 32))))
-	(dotimes (i n)
-	  (setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
-	(ecase (array-element-type img) ;; swap endian
-	  (single-float (dotimes (i n) 
-			  (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
-				(ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
-				(ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
-				(ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
-	  ((unsigned-byte 16) (dotimes (i n) 
-				(setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
-				      (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))
-				      (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
-				      (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))))))
-	(with-open-file (s filename
-			   :element-type '(unsigned-byte 32)
-			   :direction :output
-			   :if-exists :append)
-	  (write-sequence h2 s)))))
+			 :if-exists :append)
+	(write-sequence h2 s))))
   (values))
 
 (defun scale-log (img)
@@ -315,18 +318,31 @@
 #+nil
 (progn
  (defparameter *blur*
-   (let ((s 1.3)
-	 (s2 1.5))
-    (img-op #'-
-	    (blur-float
-	     (ub16->single-2
-	      (extract-frame *imgs* 673)) 
-	     s s 1e-4)
-	    (blur-float
-	     (ub16->single-2
-	      (extract-frame *imgs* 673)) 
-	     s2 s2 1e-4))))
- (write-fits "/dev/shm/o2.fits" *blur*))
+   (loop for k from 673 upto 688 collect
+	(let ((s 1.3)
+	      (s2 1.5))
+	  (img-op #'-
+		  (blur-float
+		   (ub16->single-2
+		    (extract-frame *imgs* k)) 
+		   s s 1e-4)
+		  (blur-float
+		   (ub16->single-2
+		    (extract-frame *imgs* k)) 
+		   s2 s2 1e-4)))))
+ (write-fits "/dev/shm/o.fits" (img-list->stack *blur*)))
+
+(defun img-list->stack (ls)
+  (destructuring-bind (h w) (array-dimensions (first ls))
+   (let* ((z (length ls))
+	  (vol (make-array (list z h w)
+			  :element-type (array-element-type (first ls)))))
+     (dotimes (k z)
+       (let ((im (elt ls k)))
+	(dotimes (j h)
+	  (dotimes (i w)
+	    (setf (aref vol k j i) (aref im j i))))))
+     vol)))
 
 (defun blur-float (img sigma-x sigma-y accuracy)
   (when (< 0 sigma-x)
