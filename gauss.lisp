@@ -331,7 +331,7 @@
  (progn
    (defparameter *blur*
      (let ((imgs nil))
-       (loop for k from 673 upto 3688 collect
+       (loop for k from 673 upto 10688 collect
 	    (let* ((s 1.3)
 		   (s2 1.5)
 		   (dog (img-op #'-
@@ -347,6 +347,9 @@
 	      #+nil (mark-points dog (find-local-maxima dog))))))
    (write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
 
+;; use corrected two pass algorithm 14.1.8 numerical recipes in C
+;; 1/(N-1) * (sum_j (x_j-m)^2 - 1/N (sum_j (x_j-m))^2) 
+;; second term corrects round-off error
 
 (defun get-statistics (pic-list &key mask-list)
   (if mask-list
@@ -371,12 +374,19 @@
 				(incf sum (expt (- g mean) 2)))))
 		    (* sum (/ 1d0 n)))))
 	(values mean (sqrt var)))
-      (let* ((mean (loop for e in pic-list sum
-			(* (/ 1d0 (array-total-size e)) (reduce #'+ (make-displaced-array e)))))
-	     (var (loop for e in pic-list sum
-		       (* (/ 1d0 (array-total-size e))
-			  (loop for g across (make-displaced-array e) sum
-			       (- (* g g) (* mean mean)))))))
+      (let* ((n (array-total-size (first pic-list)))
+	     (mean (/ (loop for e in pic-list sum
+			   (reduce #'+ (make-displaced-array e)))
+		      n))
+	     (s1 (loop for e in pic-list sum
+		       (loop for g across (make-displaced-array e) sum
+			    (expt (- g mean) 2))))
+	     (s2 (loop for e in pic-list sum
+		       (loop for g across (make-displaced-array e) sum
+			    (- g mean))))
+	     (var (/ (- s1 (/ (expt s2 2) n))
+		     (1- n))))
+	(format t "~a" (list 'mean mean 's1 s1 's2 s2 'var var))
 	(values mean (sqrt var)))))
 
 ;; find histogram and statistics of difference of gaussian images
@@ -387,12 +397,6 @@
 		   (reduce #'max (make-displaced-array e))))
 	  (mi (loop for e in *blur* minimize
 		   (reduce #'min (make-displaced-array e))))
-	  (mean (loop for e in *blur* sum
-		     (* (/ (* h w)) (reduce #'+ (make-displaced-array e)))))
-	  (var (loop for e in *blur* sum
-		    (* (/ (* h w))
-		       (loop for g across (make-displaced-array e) sum
-			    (- (* g g) (* mean mean))))))
 	  (mp (* 1.1 (max ma (abs mi))))
 	  (n 400)
 	  (hist (make-array n :element-type 'fixnum))
@@ -400,8 +404,11 @@
      (loop for e in *blur* do
 	  (multiple-value-setq (ee q)
 	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
-     (defparameter *dog-mean* mean)
-     (defparameter *dog-stddev* (sqrt var))
+     (defparameter *dog-mean* 0)
+     (defparameter *dog-stddev* 0)
+     (multiple-value-setq (*dog-mean*
+			   *dog-stddev*)
+       (get-statistics *blur*))
      (with-open-file (s "/dev/shm/all.dat" :direction :output
 			:if-exists :supersede
 			:if-does-not-exist :create)
@@ -409,8 +416,8 @@
 	      (loop for i across hist and g in q 
 		 collect (list g 
 			       (if (= 0 i) 0 i)))
-	      mean
-	      (sqrt var))))))
+	      *dog-mean*
+	      *dog-stddev*)))))
 
 ;; remove maxima that are not brighter than .05 stddev
 #+nil
