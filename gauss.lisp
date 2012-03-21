@@ -319,17 +319,19 @@
 (progn
  (defparameter *blur*
    (loop for k from 673 upto 688 collect
-	(let ((s 1.3)
-	      (s2 1.5))
-	  (img-op #'-
-		  (blur-float
-		   (ub16->single-2
-		    (extract-frame *imgs* k)) 
-		   s s 1e-4)
-		  (blur-float
-		   (ub16->single-2
-		    (extract-frame *imgs* k+)) 
-		   s2 s2 1e-4)))))
+	(let* ((s 1.3)
+	       (s2 1.5)
+	       (dog (img-op #'-
+			    (blur-float
+			     (ub16->single-2
+			      (extract-frame *imgs* k)) 
+			     s s 1e-4)
+			    (blur-float
+			     (ub16->single-2
+			      (extract-frame *imgs* k)) 
+			     s2 s2 1e-4)))
+	       (ma (find-local-maxima dog)))
+	  (mark-points dog ma))))
  (write-fits "/dev/shm/o.fits" (img-list->stack *blur*)))
 
 
@@ -345,17 +347,27 @@
 		 (macrolet ((compare-expand (&rest pos)
 			      `(and ,@(loop for e in pos collect
 					   (destructuring-bind (x y) e
-					     `(< v 
-						 (aref im (+ j ,y) 
-							 (+ i ,x))))))))
-		   (when (compare-expand (1 0) (0 1) (-1 0) (0 -1))
-		     (push (list i j v) res))))))
+					     `(< (aref im (+ j ,y) 
+						       (+ i ,x))
+						 v))))))
+		   (when (compare-expand (1 0) (0 1) (-1 0) (0 -1)
+					 (1 1) (-1 -1) (-1 1) (1 -1)
+					 )
+		     (push (list j i v) res))))))
      res)))
 #+nil
-(format t "~{~{~3d ~3d ~7,4f~%~}~}~%"
- (sort 
-  (find-local-maxima (first *blur*))
-  #'< :key #'third))
+(let ((ma (find-local-maxima (first *blur*))))
+ (format t "~{~{~3d ~3d ~7,4f~%~}~}~% ( ~a )~%"
+	 (sort 
+	  ma
+	  #'> :key #'third)
+	 (length ma)))
+
+(defun mark-points (img ls)
+  (dolist (e ls)
+    (destructuring-bind (j i amp) e
+      (setf (aref img j i) .1)))
+  img)
 
 (defun img-list->stack (ls)
   (destructuring-bind (h w) (array-dimensions (first ls))
