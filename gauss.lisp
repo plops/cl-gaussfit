@@ -430,11 +430,12 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 			   (return-from slope r))))))
 	(loop for r1 from (+ r 2) below n do
 	     (setf (aref a 0 r1) (expt (* sqrt-slope (- n r1)) 2)))))
-    (let ((s (/ 1s0 (+ (aref a 0 0)
-		       (* 2 (loop for i from 1 below n sum (aref a 0 i))))))
-	  (rsum (+ .5 (* .5 s (aref a 0 0)))))
+    (let* ((sum/ (/ 1s0 (+ (aref a 0 0)
+			(* 2 (loop for i from 1 below n sum (aref a 0 i))))))
+	   (rsum (+ .5 (* .5 sum/ (aref a 0 0)))))
+      (defparameter *rsum* (list 'sum (/ s) 'rsum rsum))
       (loop for i below n do
-	   (let ((v (* s (aref a 0 i))))
+	   (let ((v (* sum/ (aref a 0 i))))
 	    (setf (aref a 0 i) v)
 	    (decf rsum v)
 	    (setf (aref a 1 i) rsum))))

@@ -35,6 +35,9 @@ void makeGaussianKernel(double sigma, double accuracy, int maxRadius)
     sum = sigma * sqrt(2*PI);
    
   double rsum = 0.5 + 0.5*kernel[0][0]/sum;
+  printf("start k00 = %f\n",kernel[0][0]);
+  printf("start sum = %f\n",sum);
+  printf("start rsum = %f\n",rsum);
   for (int i=0; i<kRadius; i++) {
     double v = (kernel[0][i]/sum);
     kernel[0][i] = (float)v;
