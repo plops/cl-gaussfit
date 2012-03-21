@@ -380,7 +380,7 @@
 	      mean
 	      (sqrt var))))))
 
-;; remove maxima that are not brighter than .5 stddev
+;; remove maxima that are not brighter than .05 stddev
 #+nil
 (time
   (progn
@@ -389,7 +389,8 @@
       (loop for e in *blur* collect
 	   (let* ((c (copy-img e))
 		  (ma (find-local-maxima c))
-		  (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* (* .5 *dog-stddev*))))
+		  (big-ma (remove-if #'(lambda (e) (< (third e)
+						      (+ *dog-mean* (* .05 *dog-stddev*))))
 				     ma)))
 	     (push big-ma *blur-big-ma*)
 	     (mark-points c big-ma))))
@@ -412,8 +413,8 @@
 	   (loop for i from -5 upto 5 do
 		(let ((xx (+ x i))
 		      (yy (+ y j)))
-		  (when (and (< 0 xx w)
-			     (< 0 yy h))
+		  (when (and (<= 0 xx (1- w))
+			     (<= 0 yy (1- h)))
 		    (setf (aref a yy xx) nil)))))))
      a)))
 
@@ -432,7 +433,7 @@
    (loop for i below (length *blur*) collect
 	(let ((e (elt *blur* i))
 	   
-   (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
+   (m (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0)))
 	  (push (img-mask (copy-img e) m) masked-images)
 	  (multiple-value-setq (ee qq)
 	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
@@ -447,22 +448,73 @@
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
-    (let ((res ())
-	  (m 1)) ;; i'm not interested on events on the border
-     (loop for j from m below (- h m 1) do
-	  (loop for i from m below (- w m 1) do
-	       (let ((v (aref im j i)))
-		 (macrolet ((compare-expand (&rest pos)
-			      `(and ,@(loop for e in pos collect
-					   (destructuring-bind (x y) e
-					     `(< (aref im (+ j ,y) 
-						       (+ i ,x))
-						 v))))))
-		   (when (compare-expand (1 0) (0 1) (-1 0) (0 -1)
-					 (1 1) (-1 -1) (-1 1) (1 -1)
-					 )
-		     (push (list j i v) res))))))
-     res)))
+    (macrolet 
+	((compare-expand (&rest pos)
+	   `(and ,@(remove-if 
+		    #'null
+		    (loop for e in pos and p in '((-1 1) (0 1) (1 1)
+						  (-1 0) (0 0) (1 0)
+						  (-1 -1) (0 -1) (1 -1)) collect
+			 (when (= e 1)
+			   (destructuring-bind (x y) p
+			     (unless (= 0 x y)
+			       ;; j is upside down
+			       `(< (aref im (- j ,y) (+ i ,x)) 
+				   (aref im j i))))))))))
+      (let ((res ())
+	    (m 1)) 
+	;; 4 edges
+	(let ((i 0) (j 0)) ;; up left
+	  (when (compare-expand 0 0 0
+				0 1 1
+				0 1 1)
+	    (push (list j i (aref im j i)) res)))
+	(let ((i (1- w)) (j 0)) ;; up right
+	  (when (compare-expand 0 0 0
+				1 1 0
+				1 1 0)
+	    (push (list j i (aref im j i)) res)))
+	(let ((i 0) (j (1- h))) ;; down left
+	  (when (compare-expand 0 1 1
+				0 1 1
+				0 0 0)
+	    (push (list j i (aref im j i)) res)))
+	(let ((i (1- w)) (j (1- h))) ;; down right
+	  (when (compare-expand 1 1 0
+				1 1 0
+				0 0 0)
+	    (push (list j i (aref im j i)) res)))
+	;; left and right column
+	(loop for j from m below (- h m 1) do
+	     (let ((i 0))
+	       (when (compare-expand 0 1 1
+				     0 1 1
+				     0 1 1)
+		 (push (list j i (aref im j i)) res)))
+	     (let ((i (1- w)))
+	       (when (compare-expand 1 1 0
+				     1 1 0
+				     1 1 0)
+		 (push (list j i (aref im j i)) res))))
+	;; top and bottom row
+	(loop for i from m below (- w m 1) do
+	     (let ((j 0))
+	       (when (compare-expand 0 0 0
+				     1 1 1
+				     1 1 1)
+		 (push (list j i (aref im j i)) res)))
+	     (let ((j (1- h)))
+	       (when (compare-expand 1 1 1
+				     1 1 1
+				     0 0 0)
+		 (push (list j i (aref im j i)) res))))
+	(loop for j from m below (- h m 1) do
+	     (loop for i from m below (- w m 1) do
+		  (when (compare-expand 1 1 1
+					1 1 1
+					1 1 1)
+		    (push (list j i (aref im j i)) res))))
+	res))))
 #+nil
 (let ((ma (find-local-maxima (first *blur*))))
  (format t "~{~{~3d ~3d ~7,4f~%~}~}~% ( ~a )~%"
