@@ -29,7 +29,7 @@
      a)))
 
 ;; load the data and swap endian
-(defparameter *imgs*
+(defvar *imgs*
   (with-open-file (s "example-movie_64x64x30000.raw"
 		     :direction :input
 		     :element-type '(unsigned-byte 16))
@@ -119,24 +119,15 @@
 		    (ensure-80-chars "END"))
 		  s))
 	  (pad (make-array (- 2880 (length head))
-			   :element-type 'char
+			   :element-type 'character
 			   :initial-element #\Space)))
      (concatenate 'string head pad))))
-
-#+nil
-(length (generate-fits-header))
-
-#+nil
-(write-fits "/dev/shm/o.fits" (ub16->single-2 (extract-frame *imgs* 673)))
-#+nil
-(write-fits "/dev/shm/o.fits" (make-array (list 2 2) :element-type 'single-float
-					  :initial-element 2s0))
 
 (defun write-fits (filename img)
   (destructuring-bind (h w) (array-dimensions img)
     (let ((head (generate-fits-header :bits (ecase (array-element-type img)
 					      (single-float -32)
-					      (unsigned-byte 16))
+					      ((unsigned-byte 16) 16))
 				      :w w :h h)))
       (with-open-file (s filename
 			 :direction :output
@@ -144,17 +135,23 @@
 			 :if-does-not-exist :create)
 	(write-sequence head s))
       (let* ((i1 (array-displacement (copy-img img)))
-	     (sap (sb-sys:vector-sap (array-storage-vector img)))
+	     (sap (sb-sys:vector-sap i1))
 	     (n (array-total-size img))
 	     (h1 (make-array n :element-type '(unsigned-byte 32)))
 	     (h2 (make-array n :element-type '(unsigned-byte 32))))
 	(dotimes (i n)
 	  (setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
-	(dotimes (i n) ;; swap endian
-	  (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
-		(ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
-		(ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
-		(ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))))
+	(ecase (array-element-type img) ;; swap endian
+	  (single-float (dotimes (i n) 
+			  (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+				(ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
+				(ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+				(ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
+	  ((unsigned-byte 16) (dotimes (i n) 
+				(setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+				      (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))
+				      (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+				      (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))))))
 	(with-open-file (s filename
 			   :element-type '(unsigned-byte 32)
 			   :direction :output
@@ -262,32 +259,11 @@
        when (< 49000 e) ;(< .51 (/ e	ma))
        collect k)))
 
-(defun uniq (ls)
-  (let ((old nil))
-   (loop for e in ls
-      unless (and old
-		  (= old e))
-      collect (progn (setf old e) e))))
-
-;; select 3 preceding and 3 following images for each event
-#+nil
-(defparameter *imgs-more-events*
- (let ((r ())
-       (d 2))
-   (dolist (e *imgs-with-event*)
-     (loop for i from (- e d) upto (+ e d) do
-	  (when (<= 0 i 28999)
-	    (push i r))))
-   (uniq (sort r #'<))))
-
 ;; show avgs as well
 #+nil
 (defparameter *im*
  (loop for e in *imgs-more-events* collect
       (list e (elt *imgs-avg* e))))
-
-#+nil
-(length *im*)
 
 ;; plot data
 #+nil
@@ -331,160 +307,19 @@
       (setf (aref c1 i) (* 1d0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
 
-#+nil
-(defparameter *subtr*
-  (loop for i below 100 collect
-   (img-op #'-
-	   (extract-frame *imgs* i)
-	   (extract-frame *imgs* (+ i 30)))))
 
-;; i now want to separate background and signal. ideally i would just
-;; create masks to select background, but i don't see a robust way to
-;; do that. instead i will subtract images. i expect the histogram of
-;; those to contain a gaussian distribution centered on 0. its sigma
-;; should be the same as the background sigma.
-
-;; i hope that the signal's contribution is separated a bit better in
-;; the histogram. for this i shouldn't subtract consecutive images but
-;; ensure, that molecules are in different positions in both images.
-
-;; eventually i would like to know the sigma and mean of the
-;; background, so that i can select events that are brighter than,
-;; i.e. 5 sigma
-
-
-;; calculate average over each image
-#+nil
-(defparameter *imgs-avg*
-  (destructuring-bind (z y x) (array-dimensions *imgs*)
-    (loop for k below z collect
-	 (let ((sum 0))
-	   (dotimes (j y)
-	     (dotimes (i x)
-	       (incf sum (aref *imgs* k j i))))
-	   sum))))
-
-;; accumulate histograms of the averages to determine which images have events
-#+nil
-(defparameter *imgs-avg-hist*
- (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 10)
-	(hist (make-array n :element-type 'fixnum)))
-   (dolist (e *imgs-avg*)
-     (incf (aref hist (floor (* n e) ma))))
-   (loop for j from 0 and i across hist collect
-	(list (floor (* ma (/ 1d0 n) j)) i))))
-
-;; select images with bright events
-#+nil
-(defparameter *imgs-with-event*
-  (let ((ma (1+ (reduce #'max *imgs-avg*))))
-    (loop for k from 0 and e in *imgs-avg* 
-       when (< 49000 e) ;(< .51 (/ e	ma))
-       collect k)))
-
-(defun uniq (ls)
-  (let ((old nil))
-   (loop for e in ls
-      unless (and old
-		  (= old e))
-      collect (progn (setf old e) e))))
-
-;; select 3 preceding and 3 following images for each event
-#+nil
-(defparameter *imgs-more-events*
- (let ((r ())
-       (d 2))
-   (dolist (e *imgs-with-event*)
-     (loop for i from (- e d) upto (+ e d) do
-	  (when (<= 0 i 28999)
-	    (push i r))))
-   (uniq (sort r #'<))))
-
-;; show avgs as well
-#+nil
-(defparameter *im*
- (loop for e in *imgs-more-events* collect
-      (list e (elt *imgs-avg* e))))
-
-#+nil
-(length *im*)
-
-;; plot data
-#+nil
-(progn
- (with-open-file (s "/dev/shm/o.dat"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "~{~{~6d ~6d~}~%~}" *im*))
- (with-open-file (s "/dev/shm/o.gp"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "plot \"/dev/shm/o.dat\" u 1:2 w l; pause -1"))
- (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
-
-
-(defun extract-frame (img k)
-  (destructuring-bind (z y x) (array-dimensions img)
-    (let* ((start (* x y k))
-	   (i1 (make-array (* x y) :element-type (array-element-type img)
-			   :displaced-to img
-			   :displaced-index-offset start))
-	   (c1 (subseq i1 0)))
-      (make-array (list y x) 
-		  :element-type (array-element-type img)
-		  :displaced-to c1))))
-
-(defun make-displaced-array (a)
-  (make-array (array-total-size a)
-	      :element-type (array-element-type a)
-	      :displaced-to a))
-
-(defun img-op (op a b)
-  (let* ((a1 (make-displaced-array a))
-	 (b1 (make-displaced-array b))
-	 (c (make-array (array-dimensions a)
-			:element-type 'double-float))
-	 (c1 (make-displaced-array c)))
-    (dotimes (i (length a1))
-      (setf (aref c1 i) (* 1d0 (funcall op (aref a1 i) (aref b1 i)))))
-    c))
-
-#+nil
-(defparameter *subtr*
-  (loop for i below 100 collect
-   (img-op #'-
-	   (extract-frame *imgs* i)
-	   (extract-frame *imgs* (+ i 30)))))
-
-;; i now want to separate background and signal. ideally i would just
-;; create masks to select background, but i don't see a robust way to
-;; do that. instead i will subtract images. i expect the histogram of
-;; those to contain a gaussian distribution centered on 0. its sigma
-;; should be the same as the background sigma.
-
-;; i hope that the signal's contribution is separated a bit better in
-;; the histogram. for this i shouldn't subtract consecutive images but
-;; ensure, that molecules are in different positions in both images.
-
-;; eventually i would like to know the sigma and mean of the
-;; background, so that i can select events that are brighter than,
-;; i.e. 5 sigma
-
-;; unfortunately the above didn't work. so i probably have to convolve
-;; the images first
 
 ;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
 
 
 #+nil
-(defparameter *blur*
- (blur-float
-  (ub16->single-2
-   (extract-frame *imgs* 673)) 
-  1.6 1.6 .002))
+(progn
+ (defparameter *blur*
+   (blur-float
+    (ub16->single-2
+     (extract-frame *imgs* 673)) 
+    1.2 1.2 1e-4))
+ (write-fits "/dev/shm/o2.fits" *blur*))
 
 (defun blur-float (img sigma-x sigma-y accuracy)
   (when (< 0 sigma-x)
@@ -555,19 +390,20 @@
       (loop while (< i first-part) ;; while sum includes pixels < 0
 	 do 
 	   (with-res
-	     (do-inside)
+	       (do-inside)
 	     (do-updates)))
-   
+      
       (let ((i-end-inside (min (- len kradius) write-to)))
+	
 	(loop while (< i i-end-inside) ;; easy case: address only pixels within the line 
 	   do
-	     (let ((res (* (aref in 0) (kern 0))))
+	     (let ((res (* (aref in i) (kern 0))))
 	       (loop for k from 1 below kradius do
 		    (incf res (* (kern k)
 				 (+ (aref in (- i k))
 				    (aref in (+ i k))))))
-	       (do-updates))))
-
+	       (do-updates)))
+	(setf i i-end-inside))
       (loop while (< i write-to) ;; sum includes pixels >= len
 	 do
 	   (with-res
@@ -606,116 +442,7 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 #+nil
 (make-gaussian-kernel)
 #+nil
-(format t "~a~%"
- (make-gaussian-kernel :sigma 5.4 :accuracy 1e-2))
-
-;; calculate average over each image
-#+nil
-(defparameter *imgs-avg*
-  (destructuring-bind (z y x) (array-dimensions *imgs*)
-    (loop for k below z collect
-	 (let ((sum 0))
-	   (dotimes (j y)
-	     (dotimes (i x)
-	       (incf sum (aref *imgs* k j i))))
-	   sum))))
-
-;; accumulate histograms of the averages to determine which images have events
-#+nil
-(defparameter *imgs-avg-hist*
- (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 10)
-	(hist (make-array n :element-type 'fixnum)))
-   (dolist (e *imgs-avg*)
-     (incf (aref hist (floor (* n e) ma))))
-   (loop for j from 0 and i across hist collect
-	(list (floor (* ma (/ 1d0 n) j)) i))))
-
-;; select images with bright events
-#+nil
-(defparameter *imgs-with-event*
-  (let ((ma (1+ (reduce #'max *imgs-avg*))))
-    (loop for k from 0 and e in *imgs-avg* 
-       when (< 49000 e) ;(< .51 (/ e	ma))
-       collect k)))
-
-(defun uniq (ls)
-  (let ((old nil))
-   (loop for e in ls
-      unless (and old
-		  (= old e))
-      collect (progn (setf old e) e))))
-
-;; select 3 preceding and 3 following images for each event
-#+nil
-(defparameter *imgs-more-events*
- (let ((r ())
-       (d 2))
-   (dolist (e *imgs-with-event*)
-     (loop for i from (- e d) upto (+ e d) do
-	  (when (<= 0 i 28999)
-	    (push i r))))
-   (uniq (sort r #'<))))
-
-;; show avgs as well
-#+nil
-(defparameter *im*
- (loop for e in *imgs-more-events* collect
-      (list e (elt *imgs-avg* e))))
-
-#+nil
-(length *im*)
-
-;; plot data
-#+nil
-(progn
- (with-open-file (s "/dev/shm/o.dat"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "~{~{~6d ~6d~}~%~}" *im*))
- (with-open-file (s "/dev/shm/o.gp"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "plot \"/dev/shm/o.dat\" u 1:2 w l; pause -1"))
- (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
-
-
-(defun extract-frame (img k)
-  (destructuring-bind (z y x) (array-dimensions img)
-    (let* ((start (* x y k))
-	   (i1 (make-array (* x y) :element-type (array-element-type img)
-			   :displaced-to img
-			   :displaced-index-offset start))
-	   (c1 (subseq i1 0)))
-      (make-array (list y x) 
-		  :element-type (array-element-type img)
-		  :displaced-to c1))))
-
-(defun make-displaced-array (a)
-  (make-array (array-total-size a)
-	      :element-type (array-element-type a)
-	      :displaced-to a))
-
-(defun img-op (op a b)
-  (let* ((a1 (make-displaced-array a))
-	 (b1 (make-displaced-array b))
-	 (c (make-array (array-dimensions a)
-			:element-type 'double-float))
-	 (c1 (make-displaced-array c)))
-    (dotimes (i (length a1))
-      (setf (aref c1 i) (* 1d0 (funcall op (aref a1 i) (aref b1 i)))))
-    c))
-
-#+nil
-(time
- (defparameter *subtr*
-   (loop for i below 28000 collect
-	(img-op #'-
-		(extract-frame *imgs* i)
-		(extract-frame *imgs* (+ i 300))))))
-
+(make-gaussian-kernel :sigma 5.4 :accuracy 1e-4)
 
 (defun calc-hist (img &key (n 30) minv maxv (append nil))
   (let* ((i1 (make-displaced-array img))
@@ -735,7 +462,7 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 			      (- ma mi)))))
     (values hist g)))
 
-#+nil
+#+nil ;; histogram of subtracted images
 (time
  (let* ((n 300)
 	(mi (1- (floor (loop for e in *subtr* minimize
@@ -818,36 +545,6 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 
 #+nil
 (print-with-error 2.2442 0.13)
-
-#+nil
-(list
- (print-with-error 10242.1213 123.02)
- (print-with-error 10242.1213 1.02))
-
-#+nil
-(time
- (let ((oldx 0)
-       (oldy 0))
-  (loop for k from 673 upto 712 do
-       (defparameter *img* (ub16->double-2 (extract-frame *imgs* k)))
-       (multiple-value-bind (y0 x0) (locate-max-in-frame *imgs* k)
-	 (multiple-value-bind (theta sigmas fnorm)
-	     ;; use old fit position if it isn't too far off from the maximum
-	     (if (< (sqrt (+ (expt (- oldx x0) 2) (expt (- oldy y0) 2))) 1)
-		 (fit-gaussian :x0 oldx :y0 oldy :a 1 :b .5 :sigma .85)
-		 (fit-gaussian :x0 x0 :y0 y0 :a 1 :b .5 :sigma .85))
-	   (destructuring-bind (x y a b s) (loop for e across theta collect e)
-	     (destructuring-bind (sx sy sa sb ss) sigmas
-	       (format t "~a~%" (list k
-				      (print-with-error x sx)
-				      (print-with-error y sy)
-				      (print-with-error a sa)
-				      (print-with-error b sb)
-				      (print-with-error s ss)
-				      (format nil "~5,2f" fnorm))))
-	     (setf oldx x
-		   oldy y)))))))
-
 
 #|
 jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
@@ -1004,80 +701,6 @@ f_s  = - 2 arg/s ff
 				       (/ fnorm
 					  (aref fjnorm i))))
 	      fnorm)))))
-#+NIL
-(progn
-  (setf *rand* .001)
-  (fill-img)
-  (time
-   (dotimes (i 30)
-     (run2))))
-#+nil
-(progn
-  (format t "~{~7s~}~%" '(rand x0 y0 a b s sx sy sa sb ss))
-  (let* ((nj 60)
-	 (n 20)
-	 (h (make-array (list nj n 11) ;; fast: rand x y a b s sx sy sa sb ss 
-			:element-type 'double-float)))
-    (dotimes (j nj)
-      (dotimes (i n)
-	(setf *rand* (+ .001 (* j (/ .1d0 12))))
-	(fill-img)
-	(run2)
-	(loop for k below (length *res*) do
-	     (setf (aref h j i k) (elt *res* k)))))
-    (defparameter *scan4* h)))
-#+nil
-(with-open-file (s "/dev/shm/o.gp" :direction :output :if-does-not-exist :create
-		   :if-exists :supersede)
-  (format s "#set yrange [0:1];
- plot ")
-  (let* ((j (+ 2 (* 2 4))) 
-	 (n (+ j 1)))
-    (loop for i from j upto n do
-	 (format s "\"/dev/shm/o.dat\" u 1:~d w l~c" i (if (< i n) #\, #\;))))
-  (format s "pause -1"))
-#+nil
-(with-open-file (s "/dev/shm/o.dat" :direction :output :if-does-not-exist :create
-		   :if-exists :supersede)
- (format 
-  s "~{~{~a ~}~%~}~%"
-  (let ((a *scan4*))
-    (destructuring-bind (nj n ne) (array-dimensions a)
-      (loop for j below nj collect
-	   (append (list (format nil "~3f" (aref a j 0 0)))
-		   (let ((real-mean '(2.3d0 2.5d0 .7d0 .005d0 2d0)))
-		    (flet ((stat (col)
-			     (let* ((avg (loop for i below n sum
-					      (* (/ n) (aref a j i col))))
-				    (stddev (sqrt (loop for i below n
-						     sum
-						     (/ (expt (- (aref a j i col)
-								 (elt real-mean (1- col)))
-							      2)
-							n)))))
-			       (format nil "~5f" stddev)))
-			   (st (col)
-			     (let* ((avg (loop for i below n sum
-					      (* (/ n) (aref a j i col))))
-				    (stddev (sqrt (loop for i below n
-						     sum
-						     (/ (expt (- (aref a j i col)
-								 avg)
-							      2)
-							n)))))
-			       (format nil "~5f" (* 3 avg)))))
-					; x y a b s
-		      (list (stat 1) (st 6) (stat 2) (st 7)
-			    (stat 3) (st 8) (stat 4) (st 9) 
-			    (stat 5) (st 10))))))))))
+
 
 ;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
-
-#+nil
-(let ((jac *fjac2*))
-  (terpri)
- (destructuring-bind (h w) (array-dimensions jac)
-   (dotimes (j h)
-     (dotimes (i w)
-       (format t "~5,3f " (aref jac j i)))
-     (terpri)))) 
