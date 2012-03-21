@@ -367,15 +367,53 @@
 ;; remove maxima that are not brighter than stddev + mean 
 #+nil
 (progn
+  (defparameter *blur-big-ma* ())
  (defparameter *blur-ma*
    (loop for e in *blur* collect
 	(let* ((c (copy-img e))
 	       (ma (find-local-maxima c))
 	       (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* *dog-stddev*)))
 				  ma)))
+	  (push big-ma *blur-big-ma*)
 	  (mark-points c big-ma))))
+ (setf *blur-big-ma* (reverse *blur-big-ma*))
  (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*)))
 
+(defun draw-mask (img points)
+  (destructuring-bind (h w) (array-dimensions img)
+   (let ((a (make-array (array-dimensions img)
+			:element-type 'boolean
+			:initial-element t)))
+     (dolist (p points)
+       (destructuring-bind (y x val) p
+	 (dotimes (j 9) 
+	   (dotimes (i 9)
+	     (let ((xx (+ x i))
+		   (yy (+ y j)))
+	       (when (and (< 0 xx w)
+			  (< 0 yy h))
+		 (setf (aref a yy xx) nil)))))))
+     a)))
+
+
+;; mask 9x9 area around bright maxima
+#+nil
+(let* ((ma (loop for e in *blur* maximize
+	       (reduce #'max (make-displaced-array e))))
+      (mi (loop for e in *blur* minimize
+	       (reduce #'min (make-displaced-array e))))
+      (n 40)
+      (hist (make-array n :element-type 'fixnum))
+      ee qq) 
+  (loop for i below (length *blur*) collect
+       (let ((e (elt *blur* i))
+	    (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
+	 (multiple-value-setq (ee qq)
+	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
+  (format t "~{~{~7,3f ~5,2f~%~}~}"
+	  (loop for i across hist and g in qq
+	     collect (list g 
+			   (if (= 0 i) 0 i)))))
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
@@ -554,22 +592,28 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
 #+nil
 (make-gaussian-kernel :sigma 5.4 :accuracy 1e-4)
 
-(defun calc-hist (img &key (n 30) minv maxv (append nil))
+(defun calc-hist (img &key (n 30) minv maxv (append nil) mask)
   (let* ((i1 (make-displaced-array img))
-	(ma (if maxv maxv (1+ (ceiling (reduce #'max i1)))))
-	(mi (if minv minv (1- (floor (reduce #'min i1)))))
-	(hist (if append
-		  append
-		  (make-array n :element-type 'fixnum)))
+	 (mask1 (make-displaced-array mask))
+	 (ma (if maxv maxv (1+ (ceiling (reduce #'max i1)))))
+	 (mi (if minv minv (1- (floor (reduce #'min i1)))))
+	 (hist (if append
+		   append
+		   (make-array n :element-type 'fixnum)))
 	 (g (loop for x below n collect
 		 (+ mi
 		    (* x (/ 1d0 n) (- ma mi))))))
-
+    
     ;; x = n (g-mi)/(ma-mi)
     ;; (x (ma-mi) / n)+mi = g
-    (dotimes (i (length i1))
-      (incf (aref hist (floor (* n (- (aref i1 i) mi))
-			      (- ma mi)))))
+    (if mask
+	(dotimes (i (length i1))
+	  (when (aref mask1 i)
+	   (incf (aref hist (floor (* n (- (aref i1 i) mi))
+				   (- ma mi))))))
+	(dotimes (i (length i1))
+	  (incf (aref hist (floor (* n (- (aref i1 i) mi))
+				  (- ma mi))))))
     (values hist g)))
 
 #+nil ;; histogram of subtracted images
