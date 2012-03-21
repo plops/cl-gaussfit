@@ -110,17 +110,27 @@
 	       (NAXIS 2)
 	       (NAXIS1 ,w)
 	       (NAXIS2 ,h))))
-   (with-output-to-string (s)
-     (labels ((ensure-80-chars (str)
-		(format s "~80A" str)))
-       (dolist (e dat)
-	 (ensure-80-chars ;; the imagej writer puts = at 9th position and value starts at 11
-	  (format nil "~8A= ~A" (first e) (second e))))
-       (ensure-80-chars "END"))
-     (format nil "~2880A" s))))
+   (let* ((head (with-output-to-string (s)
+		  (labels ((ensure-80-chars (str)
+			(format s "~80A" str)))
+		    (dolist (e dat)
+		      (ensure-80-chars ;; the imagej writer puts = at 9th position and value starts at 11
+		       (format nil "~8A= ~A" (first e) (second e))))
+		    (ensure-80-chars "END"))
+		  s))
+	  (pad (make-array (- 2880 (length head))
+			   :element-type 'char
+			   :initial-element #\Space)))
+     (concatenate 'string head pad))))
 
 #+nil
-(write-fits "/dev/shm/o.fits" *blur*)
+(length (generate-fits-header))
+
+#+nil
+(write-fits "/dev/shm/o.fits" (ub16->single-2 (extract-frame *imgs* 673)))
+#+nil
+(write-fits "/dev/shm/o.fits" (make-array (list 2 2) :element-type 'single-float
+					  :initial-element 2s0))
 
 (defun write-fits (filename img)
   (destructuring-bind (h w) (array-dimensions img)
@@ -133,20 +143,23 @@
 			 :if-exists :supersede
 			 :if-does-not-exist :create)
 	(write-sequence head s))
-      (let* ((i1 (make-array (array-total-size img)
-			     :element-type (array-element-type img)
-			     :displaced-to img))
-	     (n (length i1))
-	     (h1 (make-array n :element-type '(unsigned-byte 16))))
-	#+nil
+      (let* ((i1 (array-displacement (copy-img img)))
+	     (sap (sb-sys:vector-sap (array-storage-vector img)))
+	     (n (array-total-size img))
+	     (h1 (make-array n :element-type '(unsigned-byte 32)))
+	     (h2 (make-array n :element-type '(unsigned-byte 32))))
+	(dotimes (i n)
+	  (setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
 	(dotimes (i n) ;; swap endian
-	  (setf (aref h1 i) (+ (ldb (byte 8 8) (aref i1 i))
-			       (* 256 (ldb (byte 8 0) (aref i1 i))))))
+	  (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+		(ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
+		(ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+		(ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))))
 	(with-open-file (s filename
-			   :element-type '(unsigned-byte 16)
+			   :element-type '(unsigned-byte 32)
 			   :direction :output
 			   :if-exists :append)
-	  (write-sequence h1 s)))))
+	  (write-sequence h2 s)))))
   (values))
 
 (defun scale-log (img)
