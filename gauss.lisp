@@ -127,11 +127,17 @@
 			    :initial-element #\Space)))
       (concatenate 'string head pad))))
 
+#+nil
+(format t "~a~%"
+ (generate-fits-header (first *blur*) :bits 16))
+
 (defun write-fits (filename img)
   (let ((head (generate-fits-header img
-				    :bits (ecase (array-element-type img)
-					    (single-float -32)
-					    ((unsigned-byte 16) 16)))))
+				    :bits (cond
+					    ((eq (array-element-type img) 'single-float) -32)
+					    ((or
+					      (eq (array-element-type img) '(unsigned-byte 16))
+					      (eq (array-element-type img) '(signed-byte 16))) 16)))))
     (with-open-file (s filename
 		       :direction :output
 		       :if-exists :supersede
@@ -144,17 +150,20 @@
 	   (h2 (make-array n :element-type '(unsigned-byte 32))))
       (dotimes (i n)
 	(setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
-      (ecase (array-element-type img) ;; swap endian
-	(single-float (dotimes (i n) 
-			(setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
-			      (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
-			      (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
-			      (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
-	((unsigned-byte 16) (dotimes (i n) 
-			      (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
-				    (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))
-				    (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
-				    (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))))))
+      (cond ;; swap endian
+	((eq (array-element-type img) 'single-float)
+	 (dotimes (i n) 
+	   (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+		 (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
+		 (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+		 (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
+	((or (eq (array-element-type img) '(unsigned-byte 16))
+	     (eq (array-element-type img) '(signed-byte 16)))
+	 (dotimes (i n) 
+	   (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
+		 (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))
+		 (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
+		 (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))))))
       (with-open-file (s filename
 			 :element-type '(unsigned-byte 32)
 			 :direction :output
@@ -304,10 +313,10 @@
   (let* ((a1 (make-displaced-array a))
 	 (b1 (make-displaced-array b))
 	 (c (make-array (array-dimensions a)
-			:element-type 'single-float))
+			:element-type '(signed-byte 16)))
 	 (c1 (make-displaced-array c)))
     (dotimes (i (length a1))
-      (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
+      (setf (aref c1 i) (funcall op (aref a1 i) (aref b1 i))))
     c))
 
 (defun img-mask (img mask)
@@ -331,16 +340,16 @@
  (progn
    (defparameter *blur*
      (let ((imgs nil))
-       (loop for k from 673 upto 10688 collect
+       (loop for k from 673 upto 1688 collect
 	    (let* ((s 1.3)
 		   (s2 1.5)
 		   (dog (img-op #'-
 				(blur-float
-				 (ub16->single-2
+				 (ub16->sb16
 				  (extract-frame *imgs* k))
 				 s s 1e-4)
 				(blur-float
-				 (ub16->single-2
+				 (ub16->sb16
 				  (extract-frame *imgs* k)) 
 				 s2 s2 1e-4))))
 	      dog
@@ -374,19 +383,20 @@
 				(incf sum (expt (- g mean) 2)))))
 		    (* sum (/ 1d0 n)))))
 	(values mean (sqrt var)))
-      (let* ((n (array-total-size (first pic-list)))
+      (let* ((n (* (length pic-list) (array-total-size (first pic-list))))
 	     (mean (/ (loop for e in pic-list sum
 			   (reduce #'+ (make-displaced-array e)))
 		      n))
 	     (s1 (loop for e in pic-list sum
-		       (loop for g across (make-displaced-array e) sum
-			    (expt (- g mean) 2))))
+		      (loop for g across (make-displaced-array e) sum
+			   (expt (- g mean) 2))))
 	     (s2 (loop for e in pic-list sum
-		       (loop for g across (make-displaced-array e) sum
-			    (- g mean))))
+		      (loop for g across (make-displaced-array e) sum
+			   (- g mean))))
 	     (var (/ (- s1 (/ (expt s2 2) n))
 		     (1- n))))
-	(format t "~a" (list 'mean mean 's1 s1 's2 s2 'var var))
+	(format t "~a" (list 'mean mean (* 1d0 mean) 's1 s1 'stddev1 (sqrt (/ s1 (1- n))) 's2 s2 'var var 'stddev (sqrt var)
+			     ))
 	(values mean (sqrt var)))))
 
 ;; find histogram and statistics of difference of gaussian images
@@ -398,7 +408,7 @@
 	  (mi (loop for e in *blur* minimize
 		   (reduce #'min (make-displaced-array e))))
 	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 400)
+	  (n 1200)
 	  (hist (make-array n :element-type 'fixnum))
 	  ee q)
      (loop for e in *blur* do
@@ -612,7 +622,7 @@
 	   (write-to (if x-direction w h))
 	   (gauss-kernel (make-gaussian-kernel :sigma sigma :accuracy accuracy))
 	   (kradius (array-dimension gauss-kernel 1))
-	   (cache (make-array length :element-type 'single-float))
+	   (cache (make-array length :element-type '(signed-byte 16)))
 	   (pixel0 (* line-from line-inc))
 	   (read-from (max 0 (- write-from kradius)))
 	   (read-to (min length (+ write-to kradius))))
@@ -640,7 +650,7 @@
 			 (incf v (aref in (+ i k))))
 		       (incf res (* (kern k) v)))))
 	     (do-updates ()
-	       `(progn (setf (aref pixels p) res)
+	       `(progn (setf (aref pixels p) (coerce (round res) '(signed-byte 16)))
 		       (incf p point-inc)
 		       (incf i)))
 	     (with-res (&body body)
@@ -799,6 +809,16 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
    (find-val-in-image frame ma)))
 #+nil
 (locate-max-in-frame *imgs* 673)
+
+(defun ub16->sb16 (img)
+  (let* ((a (make-array (array-dimensions img)
+			:element-type '(signed-byte 16)))
+	 (a1 (array-storage-vector a))
+	 (n (length a1))
+	 (i1 (array-displacement img)))
+    (dotimes (i n)
+      (setf (aref a1 i) (coerce (aref i1 i) '(signed-byte 16))))
+    a))
 
 (defun ub16->double-2 (img)
   (let* ((a (make-array (array-dimensions img)
