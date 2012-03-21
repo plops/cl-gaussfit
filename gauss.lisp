@@ -327,68 +327,71 @@
 
 
 #+nil
-(progn
- (defparameter *blur*
-   (let ((imgs nil))
-    (loop for k from 673 upto 688 collect
-	 (let* ((s 1.3)
-		(s2 1.5)
-		(dog (img-op #'-
-			     (blur-float
-			      (ub16->single-2
-			       (extract-frame *imgs* k))
-			      s s 1e-4)
-			     (blur-float
-			      (ub16->single-2
-			       (extract-frame *imgs* k)) 
-			      s2 s2 1e-4))))
-	   dog
-	   #+nil (mark-points dog (find-local-maxima dog))))))
- (write-fits "/dev/shm/o.fits" (img-list->stack *blur*)))
+(time
+ (progn
+   (defparameter *blur*
+     (let ((imgs nil))
+       (loop for k from 673 upto 3688 collect
+	    (let* ((s 1.3)
+		   (s2 1.5)
+		   (dog (img-op #'-
+				(blur-float
+				 (ub16->single-2
+				  (extract-frame *imgs* k))
+				 s s 1e-4)
+				(blur-float
+				 (ub16->single-2
+				  (extract-frame *imgs* k)) 
+				 s2 s2 1e-4))))
+	      dog
+	      #+nil (mark-points dog (find-local-maxima dog))))))
+   (write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
 
 ;; find histogram and statistics of difference of gaussian images
 #+nil
-(destructuring-bind (h w) (array-dimensions (first *blur*))
-  (let* ((ma (loop for e in *blur* maximize
-		  (reduce #'max (make-displaced-array e))))
-	 (mi (loop for e in *blur* minimize
-		  (reduce #'min (make-displaced-array e))))
-	 (mean (loop for e in *blur* sum
-		    (* (/ (* h w)) (reduce #'+ (make-displaced-array e)))))
-	 (var (loop for e in *blur* sum
-		   (* (/ (* h w))
-		      (loop for g across (make-displaced-array e) sum
-			   (- (* g g) (* mean mean))))))
-	 (mp (* 1.1 (max ma (abs mi))))
-	 (n 40)
-	 (hist (make-array n :element-type 'fixnum))
-	 e q)
-    (loop for e in *blur* do
-	 (multiple-value-setq (e q)
-	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
-    (defparameter *dog-mean* mean)
-    (defparameter *dog-stddev* (sqrt var))
-    (format t "~{~{~7,3f ~5,2f~%~}~} mean=~a stddev=~5,3f"
-	    (loop for i across hist and g in q 
-	       collect (list g 
-			     (if (= 0 i) 0 i)))
-	    mean
-	    (sqrt var))))
+(time
+ (destructuring-bind (h w) (array-dimensions (first *blur*))
+   (let* ((ma (loop for e in *blur* maximize
+		   (reduce #'max (make-displaced-array e))))
+	  (mi (loop for e in *blur* minimize
+		   (reduce #'min (make-displaced-array e))))
+	  (mean (loop for e in *blur* sum
+		     (* (/ (* h w)) (reduce #'+ (make-displaced-array e)))))
+	  (var (loop for e in *blur* sum
+		    (* (/ (* h w))
+		       (loop for g across (make-displaced-array e) sum
+			    (- (* g g) (* mean mean))))))
+	  (mp (* 1.1 (max ma (abs mi))))
+	  (n 40)
+	  (hist (make-array n :element-type 'fixnum))
+	  e q)
+     (loop for e in *blur* do
+	  (multiple-value-setq (e q)
+	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
+     (defparameter *dog-mean* mean)
+     (defparameter *dog-stddev* (sqrt var))
+     (format t "~{~{~7,3f ~5,2f~%~}~} mean=~a stddev=~5,3f"
+	     (loop for i across hist and g in q 
+		collect (list g 
+			      (if (= 0 i) 0 i)))
+	     mean
+	     (sqrt var)))))
 
-;; remove maxima that are not brighter than .006
+;; remove maxima that are not brighter than .5 stddev
 #+nil
-(progn
-  (defparameter *blur-big-ma* ())
- (defparameter *blur-ma*
-   (loop for e in *blur* collect
-	(let* ((c (copy-img e))
-	       (ma (find-local-maxima c))
-	       (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* (* .5 *dog-stddev*))))
-				  ma)))
-	  (push big-ma *blur-big-ma*)
-	  (mark-points c big-ma))))
- (setf *blur-big-ma* (reverse *blur-big-ma*))
- (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*)))
+(time
+  (progn
+    (defparameter *blur-big-ma* ())
+    (defparameter *blur-ma*
+      (loop for e in *blur* collect
+	   (let* ((c (copy-img e))
+		  (ma (find-local-maxima c))
+		  (big-ma (remove-if #'(lambda (e) (< (third e) (+ *dog-mean* (* .5 *dog-stddev*))))
+				     ma)))
+	     (push big-ma *blur-big-ma*)
+	     (mark-points c big-ma))))
+    (setf *blur-big-ma* (reverse *blur-big-ma*))
+    (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*))))
 
 (defun draw-mask (img points &key (mask-border 4))
   (destructuring-bind (h w) (array-dimensions img)
@@ -414,26 +417,29 @@
 
 ;; mask 10x10 area around bright maxima
 #+nil
-(let* ((ma (loop for e in *blur* maximize
-	       (reduce #'max (make-displaced-array e))))
-      (mi (loop for e in *blur* minimize
-	       (reduce #'min (make-displaced-array e))))
-      (n 40)
-      (hist (make-array n :element-type 'fixnum))
-      ee qq
-      masked-images) 
-  (loop for i below (length *blur*) collect
-       (let ((e (elt *blur* i))
-	    (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
-	 (push (img-mask (copy-img e) m) masked-images)
-	 (multiple-value-setq (ee qq)
-	   (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
-  (format t "~{~{~7,3f ~5,2f~%~}~} 10x10"
-	  (loop for i across hist and g in qq
-	     collect (list g 
-			   (if (= 0 i) 0 i))))
-  (defparameter *blur-10x10masked* masked-images)
-  (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images)))
+(time
+ (let* ((ma (loop for e in *blur* maximize
+		 (reduce #'max (make-displaced-array e))))
+	(mi (loop for e in *blur* minimize
+		 (reduce #'min (make-displaced-array e))))
+	(n 400)
+	(hist (make-array n :element-type 'fixnum))
+	ee qq
+	masked-images) 
+   (loop for i below (length *blur*) collect
+	(let ((e (elt *blur* i))
+	      (m (draw-mask (first *blur*) (elt *blur-big-ma* i))))
+	  (push (img-mask (copy-img e) m) masked-images)
+	  (multiple-value-setq (ee qq)
+	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
+   (with-open-file (s "/dev/shm/.5st.dat" :direction :output
+		      :if-does-not-exist :create :if-exists :supersede)
+    (format s "~{~{~7,3f ~5,2f~%~}~}"
+	    (loop for i across hist and g in qq
+	       collect (list g 
+			     (if (= 0 i) 0 i)))))
+   (defparameter *blur-10x10masked* masked-images)
+   (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images))))
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
