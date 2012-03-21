@@ -458,31 +458,45 @@
 
 ;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
 
+(defun convolve-line (in out kern read-from read-to 
+		      write-from write-to point0 point-inc)
+  (let ((kradius (length kern)))
+    ))
+
 (defun make-gaussian-kernel (&key (sigma .6d0) (accuracy 1d-3))
   "sigma .. radius of decay to 1/e in pixels
 accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
   (let* ((n (1+ (ceiling (* sigma (sqrt (* -2 (log accuracy)))))))
 	 (s (/ 1d0 (* sigma sigma)))
-	 (a (make-array n :element-type 'double-float)))
+	 (a (make-array (list 2 n) :element-type 'double-float)))
     (dotimes (i n)
-      (setf (aref a i) (exp (* -.5 i i s))))
+      (setf (aref a 0 i) (exp (* -.5 i i s))))
     (when (< 3 n) ;; edge correction to avoid cutoff at finite value
       ;; second order polynomial is zero at first out-of-kernel pixel
       (let* ((sqrt-slope double-float-positive-infinity)
 	     (r (loop named slope for r from (1- n) downto (floor n 2) do
-		     (let ((v (/ (sqrt (aref a r))
+		     (let ((v (/ (sqrt (aref a 0 r))
 				 (- n r))))
 		       (if (< v sqrt-slope)
 			   (setf sqrt-slope v)
 			   (return-from slope r))))))
 	(loop for r1 from (+ r 2) below n do
-	     (setf (aref a r1) (expt (* sqrt-slope (- n r1)) 2)))))
-    (let ((s (/ 1d0 (loop for i below n sum (aref a i)))))
-      (dotimes (i n)
-	(setf (aref a i) (* s (aref a i)))))
+	     (setf (aref a 0 r1) (expt (* sqrt-slope (- n r1)) 2)))))
+    (let ((s (/ 1d0 (+ (aref a 0 0)
+		       (* 2 (loop for i from 1 below n sum (aref a 0 i))))))
+	  (rsum (+ .5 (* .5 s (aref a 0 0)))))
+      (format t "rsum = ~a~%" (list rsum (/ s) (aref a 0 0)))
+      (loop for i below n do
+	   (let ((v (* s (aref a 0 i))))
+	    (setf (aref a 0 i) v)
+	    (decf rsum v)
+	    (setf (aref a 1 i) rsum))))
     a))
 #+nil
-(make-gaussian-kernel :sigma 12.4 :accuracy 1d-4)
+(make-gaussian-kernel)
+#+nil
+(format t "~a~%"
+ (make-gaussian-kernel :sigma 5.4 :accuracy 1d-2))
 
 ;; calculate average over each image
 #+nil
