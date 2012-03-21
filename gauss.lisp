@@ -456,12 +456,69 @@
 ;; unfortunately the above didn't work. so i probably have to convolve
 ;; the images first
 
-;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
+(let ((i 10))
+  (loop while (< i 12) do (incf i))
+  i)
 
-(defun convolve-line (in out kern read-from read-to 
-		      write-from write-to point0 point-inc)
-  (let ((kradius (length kern)))
-    ))
+(array-dimension 
+ (make-array (list 2 3))
+ 0)
+
+;; ~/src/mm/3rdpartypublic/sourceext/ij_source/ij/plugin/filter/GaussianBlur.java
+(defun convolve-line (in pixels kernel write-from write-to point0 point-inc)
+  (declare (type (simple-array double-float 2) kernel))
+  (macrolet ((kern (i)
+	       `(aref kernel 0 ,i))
+	     (kern-sum (i)
+	       `(aref kernel 1 ,i))
+	     (do-inside ()
+	       `(loop for k from 1 below kradius do
+		     (let ((v 0))
+		       (when (<= 0 (- i k)) 
+			 (incf v (aref in (- i k))))
+		       (when (<= (+ i k) len) 
+			 (incf v (aref in (+ i k))))
+		       (incf res (* (kern k) v)))))
+	     (do-updates ()
+	       `(progn (setf (aref pixels p) res)
+		       (incf p point-inc)
+		       (incf i))))
+    (let* ((len (length in))
+	   (first (aref in 0)) ;; replace out-of-edge with nearest edge pixel
+	   (last (aref in (1- len)))
+	   (kradius (array-dimension kernel 1))
+	   (first-part (min kradius len))
+	   (p (+ point0 (* write-from point-inc)))
+	   (i write-from))
+      (loop while (< i first-part) ;; while sum includes pixels < 0
+	 do 
+	   (let ((res (* (aref in i) (kern 0))))
+	     (incf res (* first (kern-sum i)))
+	     (when (< len (+ i kradius))
+	       (incf res (* last (kern-sum (- len i 1)))))
+	     (do-inside)
+	     (do-updates)))
+   
+      (let ((i-end-inside (min (- len kradius) write-to)))
+	(loop while (< i i-end-inside) ;; easy case: address only pixels within the line 
+	   do
+	     (let ((res (* (aref in 0) (kern 0))))
+	       (loop for k from 1 below kradius do
+		    (incf res (* (kern k)
+				 (+ (aref in (- i k))
+				    (aref in (+ i k))))))
+	       (do-updates))))
+
+      (loop while (< i write-to) ;; sum includes pixels >= len
+	 do
+	   (let ((res (* (aref in i) (kern 0))))
+	     (when (< i kradius)
+	       (incf res (* (kern-sum i) first)))
+	     (when (<= (+ i kradius) len)
+	       (incf res (* (kern-sum (- len i 1)) last)))
+	     (do-inside)
+	     (do-updates)))))
+  (values))
 
 (defun make-gaussian-kernel (&key (sigma .6d0) (accuracy 1d-3))
   "sigma .. radius of decay to 1/e in pixels
