@@ -328,9 +328,34 @@
 		   s s 1e-4)
 		  (blur-float
 		   (ub16->single-2
-		    (extract-frame *imgs* k)) 
+		    (extract-frame *imgs* k+)) 
 		   s2 s2 1e-4)))))
  (write-fits "/dev/shm/o.fits" (img-list->stack *blur*)))
+
+
+
+
+(defun find-local-maxima (im)
+  (destructuring-bind (h w) (array-dimensions im)
+    (let ((res ())
+	  (m 1)) ;; i'm not interested on events on the border
+     (loop for j from m below (- h m 1) do
+	  (loop for i from m below (- w m 1) do
+	       (let ((v (aref im j i)))
+		 (macrolet ((compare-expand (&rest pos)
+			      `(and ,@(loop for e in pos collect
+					   (destructuring-bind (x y) e
+					     `(< v 
+						 (aref im (+ j ,y) 
+							 (+ i ,x))))))))
+		   (when (compare-expand (1 0) (0 1) (-1 0) (0 -1))
+		     (push (list i j v) res))))))
+     res)))
+#+nil
+(format t "~{~{~3d ~3d ~7,4f~%~}~}~%"
+ (sort 
+  (find-local-maxima (first *blur*))
+  #'< :key #'third))
 
 (defun img-list->stack (ls)
   (destructuring-bind (h w) (array-dimensions (first ls))
