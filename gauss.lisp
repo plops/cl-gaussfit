@@ -421,8 +421,10 @@
       (loop for e in *blur* collect
 	   (let* ((c (copy-img e))
 		  (ma (find-local-maxima c))
-		  (big-ma (remove-if #'(lambda (e) (< (third e)
-						      (+ *dog-mean* (* .05 *dog-stddev*))))
+		  (big-ma (remove-if #'(lambda (e) 
+					 (< (third e)
+					    (+ *dog-mean-2* 
+					       (* 5 *dog-stddev-2*))))
 				     ma)))
 	     (push big-ma *blur-big-ma*)
 	     (mark-points c big-ma))))
@@ -484,7 +486,10 @@
   (let ((mask-list
 	 (loop for i below (length *blur*) collect
 	      (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0))))
-    (multiple-value-list (get-statistics *blur* :mask-list mask-list)))))
+    (defparameter *dog-mean-2* 0)
+    (defparameter *dog-stddev-2* 0)
+    (multiple-value-setq (*dog-mean-2*
+			  *dog-stddev-2*) (get-statistics *blur* :mask-list mask-list)))))
 
 (defun find-local-maxima (im)
   (destructuring-bind (h w) (array-dimensions im)
