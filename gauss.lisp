@@ -36,7 +36,7 @@
     (let* ((z 30000)
 	   (x 64)
 	   (y 64)
-	   (n (* z x y)) ;; the last 1000 images look wrong
+	   (n (* z x y)) 
 	   (a (make-array n :element-type '(unsigned-byte 16)))
 	   (b (make-array (list z y x) :element-type '(unsigned-byte 16)))
 	   (b1 (sb-ext:array-storage-vector b)))
@@ -46,7 +46,7 @@
 			     (* 256 (ldb (byte 8 0) (aref a i))))))
       b)))
 
-(declaim (optimize (speed 3) (safety 1) (debug 1)))
+(declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (defun find-max (stack)
   (declare (type (simple-array (unsigned-byte 16) 3) stack))
@@ -372,22 +372,37 @@
 			       do (incf sum g)
 				 (incf n))))
 		     (* sum (/ 1d0 n))))
-	     (var (let ((n 0)
-			(sum 0)) 
+	     (s1 (let ((n 0)
+		       (sum 0)) 
+		   (loop for e in pic-list and m in mask-list do
+			(let ((e1 (make-displaced-array e))
+			      (m1 (make-displaced-array m)))
+			  (loop for g across e1 and mask across m1 
+			     when mask
+			     do (incf n) 
+			       (incf sum (expt (- g mean) 2)))))
+		   sum))
+	     (n 0)
+	     (s2 (let ((sum 0)) 
 		    (loop for e in pic-list and m in mask-list do
 			 (let ((e1 (make-displaced-array e))
 			       (m1 (make-displaced-array m)))
 			   (loop for g across e1 and mask across m1 
 			      when mask
 			      do (incf n) 
-				(incf sum (expt (- g mean) 2)))))
-		    (* sum (/ 1d0 n)))))
+				(incf sum (- g mean)))))
+		    sum))
+
+	     (var (/ (- s1 (/ (expt s2 2) n))
+		     (1- n))))
+	
+	(format t "~a" (list 'mean mean (* 1d0 mean) 's1 s1 'stddev1 (sqrt (/ s1 (1- n))) 's2 s2 'var var 'stddev (sqrt var)			     ))
 	(values mean (sqrt var)))
       (let* ((n (* (length pic-list) (array-total-size (first pic-list))))
 	     (mean (/ (loop for e in pic-list sum
 			   (reduce #'+ (make-displaced-array e)))
 		      n))
-	     (s1 (loop for e in pic-list sums 
+	     (s1 (loop for e in pic-list sum 
 		      (loop for g across (make-displaced-array e) sum
 			   (expt (- g mean) 2))))
 	     (s2 (loop for e in pic-list sum
@@ -408,7 +423,7 @@
 	  (mi (loop for e in *blur* minimize
 		   (reduce #'min (make-displaced-array e))))
 	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 300)
+	  (n 3000)
 	  (hist (make-array n :element-type 'fixnum))
 	  ee q)
      (loop for e in *blur* do
@@ -470,14 +485,14 @@
      a)))
 
 
-;; mask 10x10 area around bright maxima
+;; mask 10x10 area around bright maxima in dog images
 #+nil
 (time
  (let* ((ma (loop for e in *blur* maximize
 		 (reduce #'max (make-displaced-array e))))
 	(mi (loop for e in *blur* minimize
 		 (reduce #'min (make-displaced-array e))))
-	(n 400)
+	(n 3000)
 	(hist (make-array n :element-type 'fixnum))
 	ee qq
 	masked-images) 
@@ -495,18 +510,22 @@
 	       collect (list g 
 			     (if (= 0 i) 0 i)))))
    (defparameter *blur-10x10masked* masked-images)
-   (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images))))
+   (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images))))l
+
 
 #+nil
 (time
  (format t "~A~%"
-  (let ((mask-list
-	 (loop for i below (length *blur*) collect
-	      (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0))))
-    (defparameter *dog-mean-2* 0)
-    (defparameter *dog-stddev-2* 0)
-    (multiple-value-setq (*dog-mean-2*
-			  *dog-stddev-2*) (get-statistics *blur* :mask-list mask-list)))))
+	 (progn 
+	   (defparameter *dog-mean-2* 0)
+	   (defparameter *dog-stddev-2* 0)
+	   (let ((mask-list
+		  (loop for i below (length *blur*) collect
+		       (draw-mask (first *blur*) 
+				  (elt *blur-big-ma* i) :mask-border 0))))
+	     (multiple-value-setq (*dog-mean-2*
+				   *dog-stddev-2*) 
+	       (get-statistics *blur* :mask-list mask-list))))))
 
 ;; select maxima again, but use better estimate of background stddev
 #+nil
