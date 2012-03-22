@@ -686,7 +686,7 @@ pause -1
 (length *all-fits*)
 
 #+nil
-(with-open-file (s "/home/martin/0316/cl-gaussfit/store2.lisp"
+(with-open-file (s "/home/martin/0316/cl-gaussfit/store.lisp"
 		   :direction :output
 		   :if-exists :append
 		   :if-does-not-exist :create)
@@ -762,11 +762,12 @@ pause -1
 #+nil
 (progn ;; create high res image
   (let* ((nn (length *all-fits*))
-	 (step (1- nn))
+	 (step (1- nn)
+	  )
 	(ims
 	 (loop for kk from 0 below (- nn step) by step collect
 	      (destructuring-bind (hh ww) (array-dimensions (first *raw*))
-		(let* ((sc 10)
+		(let* ((sc 4)
 		       (h (* sc hh))
 		       (w (* sc ww))
 		       (ar (make-array (list h w) :element-type 'single-float)))
@@ -775,14 +776,14 @@ pause -1
 		       (loop for f in e and p in pos do
 			    (when f
 			      (destructuring-bind (fnorm val x+err) f
-				(destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+				(destructuring-bind ((x dx) (y dy) 
+						     (a da) (b db) (s ds)) x+err
 				  (destructuring-bind (j i val) p
-				    (when (and (< (sqrt 
-						   (+ (expt (- x 2) 2)
-						      (expt (- y 2) 2)))
-						  .8)
-					       (< dx .1)
-					       (< dy .1))
+				    (when 
+					 (and dx
+					      (< .65 s)
+					       '(< dx .2)
+					       '(< dy .2))
 				     (incf 
 				      (aref ar 
 					    (min (1- h) 
@@ -794,6 +795,33 @@ pause -1
 		  ar)))))
     (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
 
+(progn ;; look at the data
+  (with-open-file (ss "/dev/shm/dx-center.dat"
+		     :direction :output
+		     :if-exists :supersede
+		     :if-does-not-exist :create)
+   (loop for e in *all-fits* and pos in 
+	*blur-big-ma-2* do
+	(loop for f in e and p in pos do
+	     (when f
+	       (destructuring-bind (fnorm val x+err) f
+		 (destructuring-bind ((x dx) (y dy) 
+				      (a da) (b db) (s ds)) x+err
+		   (destructuring-bind (j i val) p
+		     (when 
+			 (and dx)
+		       (let ((xx (sqrt (+ (expt (- x 2) 2)
+					  (expt (- y 2) 2))) )
+			     (dd (sqrt (+ (expt dx 2)
+					  (expt dy 2)))))
+			 (when a #+nil (and (< 0 x 4) (< 0 y 4) (< fnorm .8)
+				    (< 0 a 2) (< .4 b .8) (< dd 2) (< 0 s 3.5))
+			   (format ss "~5,6f ~5,6f~%" 
+				  x dx))))))))))))
+
+;; ensure sigma > .8 so that those peaks, that were cut on the border of the
+;; window are rejected
+;; many points have dx < .2
 
 (defun find-local-maxima (im)
   "returns j i val"
