@@ -742,9 +742,11 @@ pause -1
 	     (insert a f j i))))
     (write-fits "/dev/shm/fit-calc.fits" 
 		(img-list->stack
-		 (list a
-		       (img-mul (elt *raw* *current-image*)
-				.001))))))
+		 (let ((orig (img-mul (elt *raw* *current-image*)
+				      .001)))
+		   (list a
+			 orig
+			 (img-op #'- orig a)))))))
 
 
 (defun find-local-maxima (im)
