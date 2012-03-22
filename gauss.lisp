@@ -345,7 +345,7 @@
 #+nil
 (time
  (let ((start 673)
-       (n 100))
+       (n 10000))
    (defparameter *raw*
      (loop for k from start upto (+ start n) collect
 	  (ub16->single-2 (extract-frame *imgs* k))))
@@ -550,7 +550,6 @@ pause -1
 	     (multiple-value-setq (*dog-mean-2*
 				   *dog-stddev-2*) 
 	       (get-statistics *blur* :mask-list mask-list))))))
-
 ;; select maxima again, but use better estimate of background stddev
 #+nil
 (time
@@ -614,8 +613,10 @@ pause -1
 					(elt *blur-big-ma-2* i) :mask-border 0)))
 		      
 		      (multiple-value-setq (ee qq)
-			(calc-hist e :n n :minv (* .9 mi) 
-				   :maxv (* 1.1 ma) :append hist :mask m))
+			(calc-hist e :n n 
+				   :minv (* (if (< mi 0) 1.1 .9) mi)
+				   :maxv (* (if (< ma 0) 1.1 .9) ma)
+				   :append hist :mask m))
 		      m))))
    
    (multiple-value-bind (mean stddev)
@@ -685,6 +686,14 @@ pause -1
 (length *all-fits*)
 
 #+nil
+(with-open-file (s "/home/martin/0316/cl-gaussfit/store2.lisp"
+		   :direction :output
+		   :if-exists :append
+		   :if-does-not-exist :create)
+  (write *all-fits* :stream s)
+  nil)
+
+#+nil
 (time
  (progn ;; run the fit on a few images (100 takes 160 seconds)
    (defparameter *all-fits* nil)
@@ -752,21 +761,38 @@ pause -1
 
 #+nil
 (progn ;; create high res image
-  (destructuring-bind (hh ww) (array-dimensions (first *raw*))
-   (let* ((sc 10)
-	  (h (* sc hh))
-	  (w (* sc ww))
-	  (ar (make-array (list h w) :element-type 'single-float)))
-     (loop for e in *all-fits* and pos in *blur-big-ma-2* do
-	  (loop for f in e and p in pos do
-	       (when f
-		(destructuring-bind (fnorm val x+err) f
-		  (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-		    (destructuring-bind (j i val) p
-		     (incf (aref ar 
-				 (min (1- h) (max 0 (round (* sc (+ j y))))) 
-				 (min (1- w) (max 0 (round (* sc (+ i x)))))))))))))
-     (write-fits "/dev/shm/high.fits" ar))))
+  (let* ((nn (length *all-fits*))
+	 (step (1- nn))
+	(ims
+	 (loop for kk from 0 below (- nn step) by step collect
+	      (destructuring-bind (hh ww) (array-dimensions (first *raw*))
+		(let* ((sc 10)
+		       (h (* sc hh))
+		       (w (* sc ww))
+		       (ar (make-array (list h w) :element-type 'single-float)))
+		  (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
+		       (subseq *blur-big-ma-2* kk (+ kk step)) do
+		       (loop for f in e and p in pos do
+			    (when f
+			      (destructuring-bind (fnorm val x+err) f
+				(destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+				  (destructuring-bind (j i val) p
+				    (when (and (< (sqrt 
+						   (+ (expt (- x 2) 2)
+						      (expt (- y 2) 2)))
+						  .8)
+					       (< dx .1)
+					       (< dy .1))
+				     (incf 
+				      (aref ar 
+					    (min (1- h) 
+						 (max 0 
+						      (round (* sc (+ j y -2))))) 
+					    (min (1- w) 
+						 (max 0 
+						      (round (* sc (+ i x -2))))))))))))))
+		  ar)))))
+    (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
 
 
 (defun find-local-maxima (im)
@@ -1272,9 +1298,10 @@ f_s  = - 2 arg/s ff
 			  collect (aref fjac j i))))))
       (values x
 	      (loop for i below n collect
-				    (* (sqrt eps)
-				       (/ fnorm
-					  (aref fjnorm i))))
+		   (unless (< (abs (aref fjnorm i)) double-float-epsilon)
+		    (* (sqrt eps)
+		       (/ fnorm
+			  (aref fjnorm i)))))
 	      fnorm)))))
 
 
