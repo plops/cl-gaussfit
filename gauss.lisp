@@ -319,15 +319,18 @@
       (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
 
-(defun img-mask (img mask &key background)
+(defun img-mask (img mask &key (background 0))
+  (unless (= (array-total-size img)
+	     (array-total-size mask))
+    (error "mask ~d and image ~d don't have the same length"
+	   (array-total-size mask)
+	   (array-total-size img)))
   (let* ((a1 (make-displaced-array img))
 	 (b1 (make-displaced-array mask))
-	 (c (when background
-	      (make-array (array-dimensions img)
-			  :initial-element (coerce background 'single-float)
-			  :element-type 'single-float)
-	      (make-array (array-dimensions img)
-			 :element-type 'single-float)))
+	 (c (make-array (array-dimensions img)
+			:initial-element (coerce background
+						 (array-element-type img))
+			:element-type (array-element-type img)))
 	 (c1 (make-displaced-array c)))
     (dotimes (i (length a1))
       (when (aref b1 i)
@@ -342,10 +345,10 @@
 #+nil
 (time
  (let ((start 673)
-       (n 300))
+       (n 1000))
    (defparameter *raw*
      (loop for k from start upto (+ start n) collect
-	  (extract-frame *imgs* k)))
+	  (ub16->single-2 (extract-frame *imgs* k))))
    (defparameter *blur*
      (let ((imgs nil))
        (loop for k from start upto (+ start n) collect
@@ -431,7 +434,7 @@
 	  (mi (loop for e in *blur* minimize
 		   (reduce #'min (make-displaced-array e))))
 	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 3000)
+	  (n 600)
 	  (hist (make-array n :element-type 'fixnum))
 	  ee q)
      (loop for e in *blur* do
@@ -442,10 +445,10 @@
      (multiple-value-setq (*dog-mean*
 			   *dog-stddev*)
        (get-statistics *blur*))
-     (with-open-file (s "/dev/shm/all.dat" :direction :output
+     (with-open-file (s "/dev/shm/dog-all.dat" :direction :output
 			:if-exists :supersede
 			:if-does-not-exist :create)
-      (format s "~{~{~7,3f ~5,2f~%~}~} # mean=~a stddev=~5,3f~%"
+      (format s "~{~{~f ~f~%~}~} # mean = ~f stddev = ~f~%"
 	      (loop for i across hist and g in q 
 		 collect (list g 
 			       (if (= 0 i) 0 i)))
@@ -471,13 +474,11 @@
     (setf *blur-big-ma* (reverse *blur-big-ma*))
     (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*))))
 
-(defun draw-mask (img points &key (mask-border 4))
+(defun draw-mask (img points &key (mask-border 0))
   (destructuring-bind (h w) (array-dimensions img)
    (let ((a (make-array (array-dimensions img)
 			:element-type 'boolean
 			:initial-element nil)))
-     (unless mask-border
-       (setf mask-border 0))
      (loop for j from mask-border below (- h mask-border) do
 	  (loop for i from mask-border below (- w mask-border) do
 	       (setf (aref a j i) t)))
@@ -492,33 +493,49 @@
 		    (setf (aref a yy xx) nil)))))))
      a)))
 
-
 ;; mask 10x10 area around bright maxima in dog images
 #+nil
 (time
- (let* ((ma (loop for e in *blur* maximize
-		 (reduce #'max (make-displaced-array e))))
-	(mi (loop for e in *blur* minimize
-		 (reduce #'min (make-displaced-array e))))
-	(n 3000)
-	(hist (make-array n :element-type 'fixnum))
-	ee qq
-	masked-images) 
-   (loop for i below (length *blur*) collect
-	(let ((e (elt *blur* i))
-	      
-	      (m (draw-mask (first *blur*) (elt *blur-big-ma* i) :mask-border 0)))
-	  (push (img-mask (copy-img e) m) masked-images)
-	  (multiple-value-setq (ee qq)
-	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist :mask m))))
-   (with-open-file (s "/dev/shm/.5st.dat" :direction :output
-		      :if-does-not-exist :create :if-exists :supersede)
-    (format s "~{~{~7,3f ~5,2f~%~}~}"
-	    (loop for i across hist and g in qq
-	       collect (list g 
-			     (if (= 0 i) 0 i)))))
-   (defparameter *blur-10x10masked* (reverse masked-images))
-   (write-fits "/dev/shm/blur-10x10masked.fits" (img-list->stack masked-images))))
+ (progn 
+   (with-open-file (s "/dev/shm/hists.gp" :direction :output
+		     :if-exists :supersede
+		     :if-does-not-exist :create)
+    (format s "set log y
+plot \"raw.dat\" u 1:2 w l, \"raw-all.dat\" u 1:2 w l, \"dog-all.dat\" u 1:2 w l, \"dog.dat\" u 1:2 w l
+pause -1
+"))
+   (let* ((ma (loop for e in *blur* maximize
+		   (reduce #'max (make-displaced-array e))))
+	  (mi (loop for e in *blur* minimize
+		   (reduce #'min (make-displaced-array e))))
+	  (n 600)
+	  (hist (make-array n :element-type 'fixnum))
+	  ee qq
+	  (masks
+	   (loop for im in *blur* and points in *blur-big-ma* collect
+		(let ((m (draw-mask im points :mask-border 0)))
+		  (multiple-value-setq (ee qq)
+		    (calc-hist im :n n 
+			       :minv (* (if (< mi 0) 1.1 .9) mi)
+			       :maxv (* (if (< ma 0) 1.1 .9) ma)
+			       :append hist :mask m))
+		  m)))) 
+     
+     (multiple-value-bind (mean stddev) (get-statistics *blur* :mask-list masks)
+       (with-open-file (s "/dev/shm/dog.dat" :direction :output
+			  :if-does-not-exist :create :if-exists :supersede)
+	 (format s "~{~{~f ~f~%~}~}~% # mean = ~f stddev = ~f~%"
+		 (loop for i across hist and g in qq
+		    collect (list g 
+				  (if (= 0 i) 0 i)))
+		 mean
+		 stddev))
+       (defparameter *blur-10x10masked* (loop for e in *blur* and m in masks
+					   collect
+					     (img-mask (copy-img e) m
+						       :background mean))))
+     (write-fits "/dev/shm/blur-10x10masked.fits" 
+		 (img-list->stack *blur-10x10masked*)))))
 
 #+nil
 (time
@@ -561,7 +578,7 @@
 		 (reduce #'max (make-displaced-array e))))
 	(mi (loop for e in ims minimize
 		 (reduce #'min (make-displaced-array e))))
-	(n 3000)
+	(n 600)
 	(hist (make-array n :element-type 'fixnum))
 	ee qq
 	)
@@ -570,15 +587,15 @@
 	  (calc-hist e :n n :minv (* .9 mi) 
 		     :maxv (* 1.1 ma) :append hist)))
 
-   (multiple-value-bind (mean stdev)
+   (multiple-value-bind (mean stddev)
        (get-statistics ims)
      (with-open-file (s "/dev/shm/raw-all.dat" :direction :output
 			:if-does-not-exist :create :if-exists :supersede)
-       (format s "~{~{~7,3f ~5,2f~%~}~} # mean = ~f stdev = ~f~%"
+       (format s "~{~{~f ~f~%~}~} # mean = ~f stddev = ~f~%"
 	       (loop for i across hist and g in qq
 		  collect (list g 
 				(if (= 0 i) 0 i)))
-	       mean stdev)))))
+	       mean stddev)))))
 
 ;; get the histogram for the masked raw data
 #+nil
@@ -588,33 +605,38 @@
 		 (reduce #'max (make-displaced-array e))))
 	(mi (loop for e in ims minimize
 		 (reduce #'min (make-displaced-array e))))
-	(n 3000)
+	(n 600)
 	(hist (make-array n :element-type 'fixnum))
 	ee qq
 	(masks (loop for i below (length ims) collect
 		    (let ((e (elt ims i))
 			  (m (draw-mask (first ims)
-					(elt *blur-big-ma* i) :mask-border 0)))
+					(elt *blur-big-ma-2* i) :mask-border 0)))
 		      
 		      (multiple-value-setq (ee qq)
 			(calc-hist e :n n :minv (* .9 mi) 
 				   :maxv (* 1.1 ma) :append hist :mask m))
 		      m))))
    
-   (multiple-value-bind (mean stdev)
+   (multiple-value-bind (mean stddev)
        (get-statistics ims :mask-list masks)
      (let ((masked-images 
 	    (loop for e in ims and m in masks collect
 		 (img-mask (ub16->single-2 e) m
-			   :background (coerce mean 'single-float)))))
+			   :background mean))))
        (with-open-file (s "/dev/shm/raw.dat" :direction :output
 			  :if-does-not-exist :create :if-exists :supersede)
-	 (format s "~{~{~7,3f ~5,2f~%~}~} # mean = ~f stdev = ~f~%"
+	 (format s "~{~{~f ~f~%~}~} # mean = ~f stddev = ~f~%"
 		 (loop for i across hist and g in qq
 		    collect (list g 
 				  (if (= 0 i) 0 i)))
-		 mean stdev))
+		 mean stddev))
        (defparameter *raw-10x10masked* masked-images))
+     (write-fits "/dev/shm/raw-marked.fits"
+		 (img-list->stack 
+		  (loop for e in ims and points in *blur-big-ma-2* collect
+		       (mark-points (copy-img e) points
+				    :value (+ mean (* -5 stddev))))))
      (write-fits "/dev/shm/raw-10x10masked.fits" 
 		 (img-list->stack *raw-10x10masked*)))))
 
@@ -696,10 +718,11 @@
 	  #'> :key #'third)
 	 (length ma)))
 
-(defun mark-points (img ls)
-  (dolist (e ls)
-    (destructuring-bind (j i amp) e
-      (setf (aref img j i) .1)))
+(defun mark-points (img ls &key (value .1))
+  (let ((v (coerce value (array-element-type img))))
+   (dolist (e ls)
+     (destructuring-bind (j i amp) e
+       (setf (aref img j i) v))))
   img)
 
 (defun img-list->stack (ls)
@@ -932,24 +955,28 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
     a))
 
 (defun ub16->double-2 (img)
-  (let* ((a (make-array (array-dimensions img)
-			:element-type 'double-float))
-	 (a1 (array-storage-vector a))
-	 (n (length a1))
-	 (i1 (array-displacement img)))
-    (dotimes (i n)
-      (setf (aref a1 i) (* .001d0 (aref i1 i))))
-    a))
+  (if (eq (array-element-type img) 'double-float)
+      img
+      (let* ((a (make-array (array-dimensions img)
+			    :element-type 'double-float))
+	     (a1 (array-storage-vector a))
+	     (n (length a1))
+	     (i1 (array-displacement img)))
+	(dotimes (i n)
+	  (setf (aref a1 i) (* 1d0 (aref i1 i))))
+	a)))
 
 (defun ub16->single-2 (img)
-  (let* ((a (make-array (array-dimensions img)
-			:element-type 'single-float))
-	 (a1 (array-storage-vector a))
-	 (n (length a1))
-	 (i1 (make-displaced-array img)))
-    (dotimes (i n)
-      (setf (aref a1 i) (* .001s0 (aref i1 i))))
-    a))
+  (if (eq (array-element-type img) 'single-float)
+      img
+      (let* ((a (make-array (array-dimensions img)
+			    :element-type 'single-float))
+	     (a1 (array-storage-vector a))
+	     (n (length a1))
+	     (i1 (make-displaced-array img)))
+	(dotimes (i n)
+	  (setf (aref a1 i) (* 1s0 (aref i1 i))))
+	a)))
 
 ;; print 2 digits of the sigma sx and the same for the value x
 ;; if sx>1 print all digits
