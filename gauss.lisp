@@ -686,7 +686,7 @@ pause -1
 
 #+nil
 (time
- (progn
+ (progn ;; run the fit on a few images (100 takes 160 seconds)
    (defparameter *all-fits* nil)
    (loop for k from 0 below (length *raw*) do
 	(progn
@@ -750,6 +750,23 @@ pause -1
 				   orig
 				   (img-op #'- orig a)))))))))))
 
+#+nil
+(progn ;; create high res image
+  (destructuring-bind (hh ww) (array-dimensions (first *raw*))
+   (let* ((sc 10)
+	  (h (* sc hh))
+	  (w (* sc ww))
+	  (ar (make-array (list h w) :element-type 'single-float)))
+     (loop for e in *all-fits* and pos in *blur-big-ma-2* do
+	  (loop for f in e and p in pos do
+	       (when f
+		(destructuring-bind (fnorm val x+err) f
+		  (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+		    (destructuring-bind (j i val) p
+		     (incf (aref ar 
+				 (min (1- h) (max 0 (round (* sc (+ j y))))) 
+				 (min (1- w) (max 0 (round (* sc (+ i x)))))))))))))
+     (write-fits "/dev/shm/high.fits" ar))))
 
 
 (defun find-local-maxima (im)
