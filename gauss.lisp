@@ -647,11 +647,6 @@ pause -1
 ;; 0 0 0 0 0 
 ;; 0 0 0 0 0
 ;; (floor 5 2) = 2
-;; 4px neighbourhood (i don't care about that now)
-;; 0 0 0 0
-;; 0 x 0 0
-;; 0 0 0 0
-;; 0 0 0 0
 (defun extract (img y x &key (n 9))
   (destructuring-bind (h w) (array-dimensions img)
     (let* ((a (make-array (list n n)
@@ -668,12 +663,46 @@ pause -1
 			(+ x i (- offset))))))
 	a))))
 
+;; extract areas around peaks in an image
 #+nil
-(defparameter *raw-blobs*
- (let ((im (first *raw*)))
-   (loop for e in (first *blur-big-ma-2*) collect
-	(destructuring-bind (j i val) e
-	  (extract im j i)))))
+(progn
+  (defparameter *current-image* 121)
+  (defparameter *raw-blobs*
+   (let ((im (elt *raw* *current-image*)))
+     (loop for e in (elt *blur-big-ma-2* *current-image*) collect
+	  (destructuring-bind (j i val) e
+	    (extract im j i :n 5)))))
+  (write-fits "/dev/shm/raw-blobs.fits"
+	      (img-list->stack (remove-if #'null *raw-blobs*))))
+
+
+
+(defun img-mul (im &optional (factor .001d0))
+  (let* ((a (make-array (array-dimensions im)
+			:element-type 'double-float))
+	 (i1 (make-displaced-array im))
+	 (a1 (make-displaced-array a)))
+    (dotimes (i (length a1))
+      (setf (aref a1 i) (* factor (aref i1 i))))
+    a))
+
+;; run gauss fits on the extracted images
+#+nil
+(loop for num from 0 and line in 
+     (remove-if 
+      #'null
+      (loop for e in *raw-blobs* and point in 
+	   (elt *blur-big-ma-2* *current-image*) collect
+	   (when e
+	     (setf *img* (img-mul e))
+	     (destructuring-bind (j i val) point
+	       (multiple-value-bind (x err fnorm)
+		   (fit-gaussian :x0 2 :y0 2 :a 1 :b .49 :sigma .8)
+		 (format nil "~6,3f ~6,3f ~{~{~6,2f/~6,2f~}~}"
+			 fnorm val
+			 (loop for e across x and r in err collect (list e r))))))))
+   do
+     (format t "~2d ~a~%" num line))
 
 (defun find-local-maxima (im)
   "returns j i val"
@@ -1152,7 +1181,7 @@ f_s  = - 2 arg/s ff
 	  (ipvt (make-array n
 			    :element-type '(signed-byte 32)
 			    :initial-element 0))
-	  (tol .05d0 #+nil (sqrt double-float-epsilon)))
+	  (tol .001d0 #+nil (sqrt double-float-epsilon)))
      (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
        (labels ((a (ar)
 		  (sb-sys:vector-sap 
