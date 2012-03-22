@@ -345,7 +345,7 @@
 #+nil
 (time
  (let ((start 673)
-       (n 1000))
+       (n 100))
    (defparameter *raw*
      (loop for k from start upto (+ start n) collect
 	  (ub16->single-2 (extract-frame *imgs* k))))
@@ -663,10 +663,19 @@ pause -1
 			(+ x i (- offset))))))
 	a))))
 
+(defun insert (img kern y x)
+  (destructuring-bind (hh ww) (array-dimensions kern)
+    (let ((oh (floor hh 2))
+	  (ow (floor ww 2)))
+     (dotimes (j hh)
+       (dotimes (i ww)
+	 (setf (aref img (+ y (- j oh)) (+ x (- i ow)))
+	       (aref kern j i)))))))
+
 ;; extract areas around peaks in an image
 #+nil
 (progn
-  (defparameter *current-image* 313)
+  (defparameter *current-image* 13)
   (defparameter *raw-blobs*
    (let ((im (elt *raw* *current-image*)))
      (loop for e in (elt *blur-big-ma-2* *current-image*) collect
@@ -679,7 +688,7 @@ pause -1
 
 (defun img-mul (im &optional (factor .001d0))
   (let* ((a (make-array (array-dimensions im)
-			:element-type 'double-float))
+			:element-type (array-element-type im)))
 	 (i1 (make-displaced-array im))
 	 (a1 (make-displaced-array a)))
     (dotimes (i (length a1))
@@ -710,22 +719,33 @@ pause -1
 		num fnorm val x+err))))
 
 ;; generate images of the fitted functions
+#+nil
 (progn
   (defparameter *fit-calc*
-    (remove-if 
-     #'null
-     (loop for e in *fits* collect
-	  (when e
-	    (destructuring-bind (fnorm val x+err) e
-	      (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-		(let* ((n 5) 
-		       (ar (make-array (list n n) :element-type 'single-float)))
-		  (dotimes (j n)
-		    (dotimes (i n)
-		      (setf (aref ar j i) (coerce (g i j x y a b s)
-						  'single-float))))
-		  ar)))))))
-  (write-fits "/dev/shm/fit-calc.fits" (img-list->stack *fit-calc*)))
+    (loop for e in *fits* collect
+	 (when e
+	   (destructuring-bind (fnorm val x+err) e
+	     (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+	       (let* ((n 5) 
+		      (ar (make-array (list n n) :element-type 'single-float)))
+		 (dotimes (j n)
+		   (dotimes (i n)
+		     (setf (aref ar j i) (coerce (g i j x y a b s)
+						 'single-float))))
+		 ar))))))
+  (let ((a (make-array (array-dimensions (first *raw*))
+		       :element-type 'single-float
+		       :initial-element .49)))
+    (loop for f in *fit-calc* and pos in (elt *blur-big-ma-2* *current-image*) do
+	 (when f
+	   (destructuring-bind (j i val) pos
+	     (insert a f j i))))
+    (write-fits "/dev/shm/fit-calc.fits" 
+		(img-list->stack
+		 (list a
+		       (img-mul (elt *raw* *current-image*)
+				.001))))))
+
 
 (defun find-local-maxima (im)
   "returns j i val"
