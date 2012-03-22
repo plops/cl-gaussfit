@@ -640,8 +640,43 @@ pause -1
      (write-fits "/dev/shm/raw-10x10masked.fits" 
 		 (img-list->stack *raw-10x10masked*)))))
 
+;; example for 5px neighbourhood
+;; 0 0 0 0 0
+;; 0 0 0 0 0 
+;; 0 0 x 0 0 
+;; 0 0 0 0 0 
+;; 0 0 0 0 0
+;; (floor 5 2) = 2
+;; 4px neighbourhood (i don't care about that now)
+;; 0 0 0 0
+;; 0 x 0 0
+;; 0 0 0 0
+;; 0 0 0 0
+(defun extract (img y x &key (n 9))
+  (destructuring-bind (h w) (array-dimensions img)
+    (let* ((a (make-array (list n n)
+			  :element-type (array-element-type img)))
+	   (offset (floor n 2)))
+      ;; make sure that image contains full neighbourhood
+      (when (and (<= offset x (- w offset 1)) 
+		 (<= offset y (- h offset 1)))
+	(dotimes (j n)
+	  (dotimes (i n)
+	    (setf (aref a j i)
+		  (aref img
+			(+ y j (- offset))
+			(+ x i (- offset))))))
+	a))))
+
+#+nil
+(defparameter *raw-blobs*
+ (let ((im (first *raw*)))
+   (loop for e in (first *blur-big-ma-2*) collect
+	(destructuring-bind (j i val) e
+	  (extract im j i)))))
 
 (defun find-local-maxima (im)
+  "returns j i val"
   (destructuring-bind (h w) (array-dimensions im)
     (macrolet 
 	((compare-expand (&rest pos)
