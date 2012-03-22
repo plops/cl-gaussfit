@@ -344,8 +344,8 @@
 
 #+nil
 (time
- (let ((start 673)
-       (n 10000))
+ (let ((start 0)
+       (n 29999))
    (defparameter *raw*
      (loop for k from start upto (+ start n) collect
 	  (ub16->single-2 (extract-frame *imgs* k))))
@@ -686,12 +686,14 @@ pause -1
 (length *all-fits*)
 
 #+nil
-(with-open-file (s "/home/martin/0316/cl-gaussfit/store.lisp"
-		   :direction :output
-		   :if-exists :append
-		   :if-does-not-exist :create)
-  (write *all-fits* :stream s)
-  nil)
+(dotimes (i 1000)
+  (sleep 100)
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store3.lisp"
+		     :direction :output
+		     :if-exists :append
+		     :if-does-not-exist :create)
+   (write *all-fits* :stream s)
+   nil))
 
 #+nil
 (time
@@ -701,12 +703,13 @@ pause -1
 	(progn
 	  (progn ;; extract areas around peaks in an image
 	    (defparameter *current-image* k)
+	    (format t "~d~%" k)
 	    (defparameter *raw-blobs*
 	      (let ((im (elt *raw* *current-image*)))
 		(loop for e in (elt *blur-big-ma-2* *current-image*) collect
 		     (destructuring-bind (j i val) e
 		       (extract im j i :n 5)))))
-	    (write-fits "/dev/shm/raw-blobs.fits"
+	  #+nil  (write-fits "/dev/shm/raw-blobs.fits"
 			(img-list->stack (remove-if #'null *raw-blobs*))))
 
 	  (progn ;; run gauss fits on the extracted images
@@ -725,9 +728,10 @@ pause -1
 			    fnorm val
 			    (loop for e across x and r in err collect
 				 (list e r)))))))))
-	    (loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
+	    #+nil(loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
 		 (format t "~3d ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
 			 num fnorm val x+err))
+	    
 	    (setf *all-fits* (append *all-fits* (list *fits*))))
 	  
 	  #+nil
@@ -762,37 +766,39 @@ pause -1
 #+nil
 (progn ;; create high res image
   (let* ((nn (length *all-fits*))
-	 (step (1- nn)
-	  )
+	 (step (1- nn))
+	 (kk 0)
 	(ims
-	 (loop for kk from 0 below (- nn step) by step collect
-	      (destructuring-bind (hh ww) (array-dimensions (first *raw*))
-		(let* ((sc 4)
-		       (h (* sc hh))
-		       (w (* sc ww))
-		       (ar (make-array (list h w) :element-type 'single-float)))
-		  (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
-		       (subseq *blur-big-ma-2* kk (+ kk step)) do
-		       (loop for f in e and p in pos do
-			    (when f
-			      (destructuring-bind (fnorm val x+err) f
-				(destructuring-bind ((x dx) (y dy) 
-						     (a da) (b db) (s ds)) x+err
-				  (destructuring-bind (j i val) p
-				    (when 
+	 (loop for ky from 0 below 6 collect
+	  (progn ;loop for kk from 0 below (- nn step) by step collect
+	       (destructuring-bind (hh ww) (array-dimensions (first *raw*))
+		 (let* ((sc 6)
+			(h (* sc hh))
+			(w (* sc ww))
+			(ar (make-array (list h w) :element-type 'single-float)))
+		   (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
+			(subseq *blur-big-ma-2* kk (+ kk step)) do
+			(loop for f in e and p in pos do
+			     (when f
+			       (destructuring-bind (fnorm val x+err) f
+				 (destructuring-bind ((x dx) (y dy) 
+						      (a da) (b db) (s ds)) x+err
+				   (destructuring-bind (j i val) p
+				     (when 
 					 (and dx
-					      (< .65 s)
-					       '(< dx .2)
-					       '(< dy .2))
-				     (incf 
-				      (aref ar 
-					    (min (1- h) 
-						 (max 0 
-						      (round (* sc (+ j y -2))))) 
-					    (min (1- w) 
-						 (max 0 
-						      (round (* sc (+ i x -2))))))))))))))
-		  ar)))))
+					      (< .7 s)
+					      (< (/ ky 4) a (/ (1+ ky) 4))
+					      '(< dx .2)
+					      '(< dy .2))
+				       (incf 
+					(aref ar 
+					      (min (1- h) 
+						   (max 0 
+							(round (* sc (+ j y -2))))) 
+					      (min (1- w) 
+						   (max 0 
+							(round (* sc (+ i x -2))))))))))))))
+		   ar))))))
     (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
 
 (progn ;; look at the data
@@ -814,10 +820,10 @@ pause -1
 					  (expt (- y 2) 2))) )
 			     (dd (sqrt (+ (expt dx 2)
 					  (expt dy 2)))))
-			 (when a #+nil (and (< 0 x 4) (< 0 y 4) (< fnorm .8)
-				    (< 0 a 2) (< .4 b .8) (< dd 2) (< 0 s 3.5))
+			 (when a (and (< 0 x 4) (< 0 y 4) (< fnorm .8)
+				    (< 0 a 2) (< .4 b .8) (< dd 2) (< .7 s 3.5))
 			   (format ss "~5,6f ~5,6f~%" 
-				  x dx))))))))))))
+				  (+ x i) (+ y j)))))))))))))
 
 ;; ensure sigma > .8 so that those peaks, that were cut on the border of the
 ;; window are rejected
