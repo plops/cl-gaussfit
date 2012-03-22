@@ -16,7 +16,7 @@
 	 (s2 (/ (* s s)))
 	 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
 	 (e (exp arg)))
-    (+ (random *rand*) b (* a e))))
+    (+ b (* a e))))
 
 
 (defun fill-img ()
@@ -666,7 +666,7 @@ pause -1
 ;; extract areas around peaks in an image
 #+nil
 (progn
-  (defparameter *current-image* 121)
+  (defparameter *current-image* 313)
   (defparameter *raw-blobs*
    (let ((im (elt *raw* *current-image*)))
      (loop for e in (elt *blur-big-ma-2* *current-image*) collect
@@ -688,21 +688,44 @@ pause -1
 
 ;; run gauss fits on the extracted images
 #+nil
-(loop for num from 0 and line in 
-     (remove-if 
-      #'null
-      (loop for e in *raw-blobs* and point in 
-	   (elt *blur-big-ma-2* *current-image*) collect
-	   (when e
-	     (setf *img* (img-mul e))
-	     (destructuring-bind (j i val) point
-	       (multiple-value-bind (x err fnorm)
-		   (fit-gaussian :x0 2 :y0 2 :a 1 :b .49 :sigma .8)
-		 (format nil "~6,3f ~6,3f ~{~{~6,2f/~6,2f~}~}"
-			 fnorm val
-			 (loop for e across x and r in err collect (list e r))))))))
-   do
-     (format t "~2d ~a~%" num line))
+(time
+ (progn
+   (defparameter
+       *fits*
+     (loop for e in *raw-blobs* and point in 
+	  (elt *blur-big-ma-2* *current-image*) collect
+	  (when e
+	    (setf *img* (img-mul e))
+	    (destructuring-bind (h w) (array-dimensions e)
+	      (destructuring-bind (j i val) point
+		(multiple-value-bind (x err fnorm)
+		    (fit-gaussian :x0 (floor w 2) :y0 (floor h 2)
+				  :a 1 :b .49 :sigma .8)
+		  (list
+		   fnorm val
+		   (loop for e across x and r in err collect
+			(list e r)))))))))
+   (loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
+	(format t "~3d ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+		num fnorm val x+err))))
+
+;; generate images of the fitted functions
+(progn
+  (defparameter *fit-calc*
+    (remove-if 
+     #'null
+     (loop for e in *fits* collect
+	  (when e
+	    (destructuring-bind (fnorm val x+err) e
+	      (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+		(let* ((n 5) 
+		       (ar (make-array (list n n) :element-type 'single-float)))
+		  (dotimes (j n)
+		    (dotimes (i n)
+		      (setf (aref ar j i) (coerce (g i j x y a b s)
+						  'single-float))))
+		  ar)))))))
+  (write-fits "/dev/shm/fit-calc.fits" (img-list->stack *fit-calc*)))
 
 (defun find-local-maxima (im)
   "returns j i val"
