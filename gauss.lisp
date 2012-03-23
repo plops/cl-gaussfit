@@ -696,7 +696,7 @@ pause -1
    nil))
 
 #+nil
-(time
+(time 
  (progn ;; run the fit on a few images (100 takes 160 seconds)
    (defparameter *all-fits* nil)
    (loop for k from 0 below (length *raw*) do
