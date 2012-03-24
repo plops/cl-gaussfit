@@ -715,7 +715,7 @@ pause -1
 	  (progn ;; run gauss fits on the extracted images
 	    (defparameter
 		*fits*
-	      (loop for e in *raw-blobs* and point in 
+	      (loop for e in *raw-blobs* and point in r
 		   (elt *blur-big-ma-2* *current-image*) collect
 		   (when e
 		     (setf *img* (img-mul e .001))

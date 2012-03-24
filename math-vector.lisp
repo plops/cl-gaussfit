@@ -13,13 +13,15 @@
 
 (in-package #:kielhorn.martin.math.vector)
 
-(declaim (optimize (speed 0) (safety 3) (debug 3)))
+(declaim (optimize (speed 3) (safety 1) (debug 1)))
 
 (deftype vec3 ()
-    '(simple-array double-float 3))
+    '(simple-array double-float (3)))
 
 (defun v (x y &optional (z 0))
-  (make-array 3 :element-type 'double-float :initial-contents (list x y z)))
+  (make-array 3 :element-type 'double-float 
+	      :initial-contents (mapcar #'(lambda (x) (* 1d0 x))
+					(list x y z))))
 
 (defun vec-x (v)
   (aref v 0))
@@ -28,48 +30,54 @@
 (defun vec-z (v)
   (aref v 2))
 
-(defun v. (a b)
-  (reduce #'+ (map 'vector #'* a b))) 
+(defun v.3 (a b) ;; .57 s
+  (declare (type vec3 a b))
+  (reduce #'+ (map '(simple-array double-float 1) #'* a b)))
 
-(defun iformat (control-string &rest format-arguments)
-  (intern 
-   (string-upcase 
-    (funcall #'format (append (list nil control-string)) 
-				  format-arguments))))
+(defun v.2 (a b) ;; .2 s
+  (declare (type vec3 a b))
+  (loop for p across a and q across b sum (* p q)))
+
+(defun v. (a b) ;; .025 s
+  (declare (type vec3 a b)
+	   (values double-float &optional))
+  (let ((sum 0d0))
+   (dotimes (i (length a))
+     (incf sum (* (aref a i) (aref b i))))
+   sum)) 
 
 #+nil
-(iformat "v~a" '+)
+(time
+ (let ((a (v 1 2 3))
+       (b (v 4 5 2)))
+   (dotimes (i 1000000)
+     (v. a b))))
 
 (defmacro def-vec-op (op)
-  (let ((mname (iformat "binary~s" op)))
-   `(progn
-      (defgeneric ,mname (a b))
-      (defun ,(iformat "v~a" op) (&rest args) 
-	(unless (null args)
-	  (reduce #',mname args)))
-      (defmethod ,mname ((x double-float) (y double-float))
-	(+ x y))
-      (defmethod ,mname ((x sequence) (y sequence))
-	(map (type-of x) #',mname x y)))))
+  `(defun ,(intern (format nil "V~a" op)) (a b) 
+     (let ((c (make-array (array-dimensions a)
+			  :element-type (array-element-type a))))
+       (loop for p across a and q across b and i from 0 do
+	    (setf (aref c i) (,op p q)))
+       c)))
 
 (def-vec-op +)
+(def-vec-op -)
 
-(defgeneric binary-subtract (a b))
+#+nil
+(v+ (v 1 2 3) (v 3 4 5))
+#+nil
+(reduce #'v+ (list (v 1 2 3)
+		   (v 0 0 1)
+		   (v 1 0 0)
+		   (v 0 1 0)))
 
-(defun v- (&rest args) 
-  "Subtract vectors element-wise."
-  (unless (null args)
-    (reduce #'binary-subtract args)))
+(defun s* (scalar vec)
+  (map 'vec3
+       #'(lambda (x) (* scalar x)) vec))
 
-(defmethod binary-subtract ((x number) (y number))
-  (- x y))
-
-(defmethod binary-subtract ((x sequence) (y sequence))
-  (map (type-of x) #'binary-subtract x y))
-
-(defun v* (scalar vec)
-  (map 'vector #'(lambda (x) (* scalar x)) vec))
-
+#+nil
+(type-of (s* 3 (v 0 2)))
 
 (defun cross (a b)
   (v (- (* (vec-y a) (vec-z b))
