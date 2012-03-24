@@ -1,8 +1,6 @@
-(require :asdf)
-(require :run)
-(defpackage :run
-  (:use :cl :kielhorn.martin.math.vector))
-(in-package :run)
+(defpackage :delaunay
+  (:use :cl :math.vector))
+(in-package :delaunay)
 
 ;; jedes dreieck, dass der algorithmus jemals in betracht zieht wird
 ;; in ein array geschrieben. jedesmal wenn ein dreieck in 3 kleinere
@@ -135,7 +133,7 @@ lebt."
 	 (ca (v- (third points)
 		 (first points)))
 	 (ba2 (dot ba ba))
-	 (ca2 (dot ca ca))
+	 (ca2 (v. ca ca))
 	 (ndet (- (* (vec-x ba) (vec-y ca))
 		  (* (vec-y ba) (vec-x ca))))
 	 (ndet/ (if (= 0 ndet)
@@ -145,7 +143,7 @@ lebt."
 				  (* ca2 (vec-y ba)))
 			       (- (* ca2 (vec-x ba))
 				  (* ba2 (vec-x ca))))))
-	 (r2 (dot dcenter dcenter)))
+	 (r2 (v. dcenter dcenter)))
     (make-instance 'circle :center (v+ (first points) dcenter) :r^2 r2)))
 
 (defun contains (ti point)
@@ -188,7 +186,7 @@ lebt."
   "Return positive if point D is inside the circumcircle of triangle ABC. Zero if on border. Negative if outside."
   (let* ((cc (circumcircle (make-triangle a b c)))
 	 (vr (v- d (center cc)))
-	 (radd (dot vr vr)))
+	 (radd (v. vr vr)))
     (- (r^2 cc) radd)))
 #+nil
 (defmethod erase-triangle ((del delaunay) a b c d0 d1 d2)

@@ -1,4 +1,4 @@
-(defpackage #:kielhorn.martin.math.vector
+(defpackage #:math.vector
   (:use :cl)
   (:export #:v
 	   #:vec-x
@@ -11,7 +11,7 @@
 	   #:cross
 	   #:rotation-matrix))
 
-(in-package #:kielhorn.martin.math.vector)
+(in-package #:math.vector)
 
 (declaim (optimize (speed 3) (safety 1) (debug 1)))
 
@@ -19,13 +19,19 @@
     '(simple-array single-float (3)))
 
 
-(defun v (&optional (x 0 xp) (y 0 yp) (z 0 zp))
-  (if (or xp yp zp)
-      (make-array 3 :element-type 'single-float 
+(defun v (&optional (x 0s0 xp) (y 0s0 yp) (z 0s0 zp))
+  (if (and (typep x 'single-float)
+	   (typep y 'single-float)
+	   (typep z 'single-float)) 
+      (make-array 3 :element-type 'single-float .04e-6s 
+		  :initial-contents (list x y z))
+      (make-array 3 :element-type 'single-float ;; .5e-6s
 		  :initial-contents (mapcar #'(lambda (x) (* 1s0 x))
-					    (list x y z)))
-      (make-array 3 :element-type 'single-float 
-		  :initial-element 0s0)))
+					    (list x y z)))))
+#+nil
+(time
+ (dotimes (i 10000000)
+   (let ((a (v .2))))))
 
 (declaim (inline vec-x vec-y vec-z))
 (declaim (ftype (function (vec3) single-float) vec-x vec-y vec-z))
@@ -62,27 +68,13 @@
 		   (v 1 0 0)
 		   (v 0 1 0)))
 
-(defun s*2 (scalar vec) ;; .3e-6 s
-  (declare (type single-float scalar)
-	   (type vec3 vec))
-  (map '(simple-array single-float 1)
-       #'(lambda (x) (* scalar x)) vec))
-
-(defun s*1 (scalar vec) ;; .04e-6 s
+(defun s* (scalar vec) ;; .04e-6 s
   (declare (type single-float scalar)
 	   (type vec3 vec))
   (let ((r (v)))
     (dotimes (i (length vec))
       (setf (aref r i) (* scalar (aref vec i))))
     r))
-#+nil
-(let ((a (v 1 2 3)))
-  (time
-   (dotimes (i 1000000)
-     (s*2 .3 a))))
-
-#+nil
-(type-of (s*1 3s2 (v 0 2)))
 
 (defun cross (a b)
   (v (- (* (vec-y a) (vec-z b))
@@ -92,3 +84,5 @@
      (- (* (vec-x a) (vec-y b))
 	(* (vec-y a) (vec-x b)))))
 
+#+nil
+(cross (v 0 0 1) (v 1 0 0))
