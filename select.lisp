@@ -4,9 +4,9 @@
   "Given K in [0..n-1] modifies the array AR to contain the K+1
   smallest values in the front (in arbitrary order). Return value is
   AR[K] and therefore the K+1-smallest value."
-  (declare (type (simple-array double-float 1) ar)
+  (declare (type (simple-array single-float 1) ar)
 	   (fixnum k)
-	   (values double-float &optional))
+	   (values single-float &optional))
   (let* ((n (length ar))
 	 (a 0d0)
 	 (i 0)
@@ -53,9 +53,20 @@
 		(setf ir (1- j)))
 	      (when (<= j k)
 		(setf l i))))))))
+
 #+nil
-(let ((a (let ((ls '(1 12 9 8 7 6 4 5 3 2 1)))
-	  (make-array (length ls)
-		      :element-type 'double-float
-		      :initial-contents (mapcar #'(lambda (x) (* 1d0 x)) ls)))))
-  (values (select a 4) a))
+(let* ((n 10000000) ;; .2s for 10e6
+       (nh (floor n 2))
+       (a (make-array n :element-type 'single-float)))
+  (dotimes (i n)
+    (setf (aref a i) (random .5)))
+  (time 
+   (select a nh)))
+#+nil
+(let ((k 4))
+  (let ((a (let ((ls '(1 3.2 12 9 8 7 6 4 5 3 2 1)))
+	     (make-array (length ls)
+			 :element-type 'single-float
+			:initial-contents (mapcar #'(lambda (x) (* 1s0 x)) ls)))))
+    (select a k)
+    a))
