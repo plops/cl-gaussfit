@@ -183,15 +183,14 @@ lebt."
 	    (setf k j) ;; new mother
 	    )
       k)))
-#|
-
+#+nil
 (defun point-in-circumcircle (d a b c)
   "Return positive if point D is inside the circumcircle of triangle ABC. Zero if on border. Negative if outside."
   (let* ((cc (circumcircle (make-triangle a b c)))
 	 (vr (v- d (center cc)))
 	 (radd (dot vr vr)))
     (- (r^2 cc) radd)))
-
+#+nil
 (defmethod erase-triangle ((del delaunay) a b c d0 d1 d2)
   "Erase triangle ABC and inactivate it in TRILIST after setting its daughters."
   (let* ((key (logxor (sxhash a)
@@ -210,7 +209,7 @@ lebt."
 		  (stat tri) 0))
 	  (setf (ntri del) (1- (ntri del))))
 	(error "Non-existant triangle."))))
-
+#+nil
 (defmethod store-triangle ((del delaunay) a b c)
   (with-slots (trilist ntree ntri trihash linehash) del
     (setf (aref (trilist del) ntree) 
@@ -228,7 +227,7 @@ lebt."
 	  ntree (1+ ntree)
 	  ntri (1+ ntri))
     (1- ntree)))
-  
+#+nil
 (defmethod insert-point ((del delaunay) r)
   "R is an index for global-points."
   (let* ((tno (contains-point del r))
@@ -271,8 +270,7 @@ lebt."
 				(sxhash i)) (linehash del))
 		    (push (list s l j) tasks) ;; two new edges need checking
 		    (push (list s i l) tasks)))))))))
-  |#
-
+  
 ;;;; hash table stuff
 
 (defun triangle-key (tri)
