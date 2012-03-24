@@ -8,18 +8,30 @@
 ;; seite getauscht wird, dann werden die zwei neuen dreiecke als
 ;; toechter der beiden alten eingetragen
 
-(defstruct triel
-  "VERTICES enthaelt dreiecksecken als indizes in
+(deftype ivec3 ()
+  '(simple-array fixnum (3)))
+
+#+nil
+"VERTICES enthaelt dreiecksecken als indizes in
 array-points. DAUGHTERS enthaelt entweder pointer zu drei enthaltenen
 kleineren dreiecken, zwei dreiecken die nur ueberlappen -- durch
 seitentausch erzeugt und -1 als letztes element oder dreimal -1 --
 bedeutet keine tochter. STATUS ist nicht null, wenn das dreieck gerade
 lebt."
-  (vertices #(0 0 0) :type '(array integer 3))			
-  (daughters #(-1 -1 -1) :type '(array integer 3))
-  (status 1 :type integer))
+(defclass triel ()
+  ((vertices :initarg :triel-vertices
+	     :accessor triel-vertices
+	     :type (simple-array fixnum (3)))			
+   (daughters :initarg :triel-vertices
+	      :accessor triel-daughters
+	      :type (simple-array fixnum 3))
+   (status :initform 1
+	   :accessor triel-status
+	   :type fixnum)))
 
 (defparameter array-triel (make-array 1000 :element-type 'triel))
+
+(type-of (triel-vertices (aref array-triel 1)))
 
 (defun get-triangle (i)
   (triel-vertices (aref array-triel i)))
@@ -65,7 +77,7 @@ lebt."
   (aref array-points i))
 
 
-(defun vertices (ti)
+(defun vertices (i)
   "mit gebenenen index in array-triel liefere die koordinaten der
   eckpunkte"
   (mapcar #'get-point
@@ -84,7 +96,7 @@ lebt."
 
 (defun centroid (ti)
   "Center of mass of a triangle TI."
-  (v* 1/3 (reduce 'v+ (vertices ti))))
+  (s* (/ 1s0 3) (reduce #'v+ (vertices ti))))
  
 (defun delta (ti)
   "Calculate the edge directions of the triangle (in CCW order)."
@@ -103,10 +115,10 @@ lebt."
 	 (dtri (delta ti))
 	 (side-lengths (mapcar #'norm dtri))
 	 (perimeter (reduce #'+ side-lengths))
-	 (center (v* (/ perimeter) 
+	 (center (s* (/ 1s0 perimeter) 
 		     (reduce #'v+ 
 			     (mapcar #'(lambda (p d) 
-					 (v (* (vec-x p)  (norm d))
+					 (v (* (vec-x p) (norm d))
 					    (* (vec-y p) (norm d))))
 				     points dtri))))
 	 (r2 (/ (reduce #'* 
@@ -132,14 +144,14 @@ lebt."
 		 (first points)))
 	 (ca (v- (third points)
 		 (first points)))
-	 (ba2 (dot ba ba))
+	 (ba2 (v. ba ba))
 	 (ca2 (v. ca ca))
 	 (ndet (- (* (vec-x ba) (vec-y ca))
 		  (* (vec-y ba) (vec-x ca))))
 	 (ndet/ (if (= 0 ndet)
 		    (det0-error "No circle thru colinear points.")
 		    (/ .5 ndet)))
-	 (dcenter (v* ndet/ (v (- (* ba2 (vec-y ca))
+	 (dcenter (s* ndet/ (v (- (* ba2 (vec-y ca))
 				  (* ca2 (vec-y ba)))
 			       (- (* ca2 (vec-x ba))
 				  (* ba2 (vec-x ca))))))
@@ -157,27 +169,27 @@ lebt."
 			dtri rs)))
     (every #'(lambda (x) (>= x 0))
 	   areas)))
-
+#+nil
 (defun contains-point (point-index)
   "Return index of triangle that contains POINT-INDEX. -1 for failure."
   (block block-let
     (let ((j 0)
 	  (k 0)
 	  (i 0))
-      (loop while (<= (stat (get-triangle k)) 0) ;; walk down all triangles which are disabled
+      (loop while (<= (triel-status (get-triangle k)) 0) ;; walk down all triangles which are disabled
 	    do
-	    (block block-loop 
-	      (loop ;; check up to three daughters [running i]
-	       (setf j (aref (daughters (aref trilist k)) i))
-	       (unless (< j 0)
-		 (when (> (contains (aref trilist j) (aref global-points point-index))
-			  0)
-		   (format t "point is contained in triangle j=~a." j)
-		   (return-from block-loop)))
-	       (setf i (1+ i))
-	       (when (= i 3)
-		 (format t "point not found in any daughter.")
-		 (return-from block-let -1))))
+	   (loop named blk do ;; check up to three daughters [running i]
+		(setf j (aref (triel-daughters (aref trilist k)) i))
+		(unless (< j 0)
+		  (when (< (aref global-points point-index)
+			   (contains (aref trilist j) )
+			   0)
+		    (format t "point is contained in triangle j=~a." j)
+		    (return-from blk)))
+		(setf i (1+ i))
+		(when (= i 3)
+		  (format t "point not found in any daughter.")
+		  (return-from block-let -1)))
 	    (setf k j) ;; new mother
 	    )
       k)))
@@ -298,7 +310,7 @@ lebt."
 
 
 (defun clear-all ()
-  (setf n-triangles 0
+  (setf ;;n-triangles 0
 	n-points 0)
   (clrhash ht-triangles)
   (clrhash ht-lines))
@@ -318,25 +330,33 @@ lebt."
   (loop for i below n-points collecting
 	(get-point i)))
 
-#|
+#+nil
 (clear-all)
 
-(store-triangle (v -1 0) (v 1 0) (v 0 2))
-(store-triangle (v .4 .3) (v .6 .22) (v .3 .1))
-(store-triangle (v .6 .3) (v .2 .5) (v .3 .2))
+#+nil
+(progn
+  (store-triangle (v -1 0) (v 1 0) (v 0 2))
+  (store-triangle (v .4 .3) (v .6 .22) (v .3 .1))
+  (store-triangle (v .6 .3) (v .2 .5) (v .3 .2)))
 
-(hash-table-count ht-triangles)
-(hash-table-count ht-lines)
+#+inl
+(list
+ (hash-table-count ht-triangles)
+ (hash-table-count ht-lines))
 
-(print-points)
-(print-triangles)
-(print-lines)
+#+nil
+(progn
+  (print-points)
+  (print-triangles)
+  (print-lines))
 
-(centroid 0)
-(delta 0)
-(incircle 0)
-(circumcircle 0)
-(contains 0 (center (incircle 0)))
+#+nil
+(list
+ (centroid 0)
+ (delta 0)
+ (incircle 0)
+ (circumcircle 0)
+ (contains 0 (center (incircle 0))))
 
+#+nil
 (run)
-|#

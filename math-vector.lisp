@@ -5,6 +5,7 @@
 	   #:vec-y
 	   #:vec-z
 	   #:v.
+	   #:norm
 	   #:v+
 	   #:v-
 	   #:s*
@@ -19,11 +20,11 @@
     '(simple-array single-float (3)))
 
 
-(defun v (&optional (x 0s0 xp) (y 0s0 yp) (z 0s0 zp))
+(defun v (&optional (x 0s0) (y 0s0) (z 0s0))
   (if (and (typep x 'single-float)
 	   (typep y 'single-float)
 	   (typep z 'single-float)) 
-      (make-array 3 :element-type 'single-float .04e-6s 
+      (make-array 3 :element-type 'single-float ;; .04e-6s 
 		  :initial-contents (list x y z))
       (make-array 3 :element-type 'single-float ;; .5e-6s
 		  :initial-contents (mapcar #'(lambda (x) (* 1s0 x))
@@ -48,6 +49,13 @@
    (dotimes (i (length a))
      (incf sum (* (aref a i) (aref b i))))
    sum)) 
+
+(defun norm (v)
+  (declare (type vec3 v))
+  (let ((a (v. v v))) 
+    (if (< a 0s0)
+	0s0
+	(sqrt a))))
 
 (defmacro def-vec-op (op)
   `(defun ,(intern (format nil "V~a" op)) (a b)

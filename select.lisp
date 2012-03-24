@@ -17,7 +17,10 @@
     (labels ((swap (p q)
 	       (let ((h (aref ar p)))
 		 (setf (aref ar p) (aref ar q)
-		       (aref ar q) h))))
+		       (aref ar q) h)))
+	     (ensure< (p q)
+	       (when (< (aref ar p) (aref ar q))
+		 (swap q p))))
      (loop
 	(if (<= ir (1+ l))
 	    ;; active partition contains 1 or 2 el
@@ -30,20 +33,18 @@
 	      (setf mid (floor (+ l ir) 2))
 	      (swap mid (1+ l))
 	      ;; rearrange for ar[l]<=ar[l+1]<=ar[ir]
-	      (when (< (aref ar ir) (aref ar l))
-		(swap ir l))
-	      (when (< (aref ar ir) (aref ar (1+ l)))
-		(swap ir (1+ l)))
-	      (when (< (aref ar (1+ l)) (aref ar l))
-		(swap l (1+ l)))
+	      (ensure< ir l)
+	      (ensure< ir (1+ l))
+	      (ensure< (1+ l) l)
+	
 	      (setf i (1+ l)
 		    j ir
 		    a (aref ar i))
 	      (loop ;; scan up and down, put big elements right, small ones left
 		 (loop do (incf i)
-		      while (< (aref ar i) a))
+		    while (< (aref ar i) a))
 		 (loop do (decf j)
-		      while (< a (aref ar j)))
+		    while (< a (aref ar j)))
 		 (when (< j i)
 		   (return))
 		 (swap i j))
@@ -63,10 +64,20 @@
   (time 
    (select a nh)))
 #+nil
-(let ((k 4))
-  (let ((a (let ((ls '(1 3.2 12 9 8 7 6 4 5 3 2 1)))
-	     (make-array (length ls)
-			 :element-type 'single-float
-			:initial-contents (mapcar #'(lambda (x) (* 1s0 x)) ls)))))
+(dotimes (i 10000)
+  (let* ((n (1+ (random 1090)))
+	 (k (random n))
+  
+	 (a (make-array n
+			:element-type 'single-float
+			:initial-contents (loop for i below n collect
+					       (* 1s0 (random 10))))))
     (select a k)
-    a))
+    (format t "~a~%" (list 'i i 'n n 'k k))
+    (when (and (< (1+ k) (- n 1)))
+      (let ((ma (reduce #'max
+			(subseq a 0 (1+ k))))
+	    (mi (reduce #'min 
+			(subseq a (1+ k)))))
+	(unless (<= ma mi)
+	  (error "there is a too big element on the left"))))))
