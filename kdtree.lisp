@@ -1,4 +1,4 @@
-(declaim (optimize (speed 2) (safety 3) (debug 3)))
+(declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (defpackage :kdtree
   (:use :cl :math.vector))
@@ -17,7 +17,7 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 (defstruct (kd-node (:include box)
 		    (:conc-name "KD-")
 		    (:predicate nil)
-		    (:copier nil))
+		    (:copier %copy-kd-node))
   (mom 0 :type fixnum)
   (left 0 :type fixnum)
   (right 0 :type fixnum)
@@ -30,7 +30,17 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 	(sb-sys:vector-sap (vec-coord (box-min (copy-box a))))))
 
 (defun copy-kd-node (node)
-  (let ((a))))
+  (let ((a (%copy-kd-node node))
+	(b (copy-box node)))
+    (setf (kd-min a) (box-min b)
+	  (kd-max a) (box-max b))
+    a))
+
+#+nil
+(let* ((a (make-kd-node))
+       (b (copy-kd-node a)))
+  (setf (kd-min a) (v .2 .1))
+  (mapcar #'kd-min (list a b)))
 
 
 (defstruct (kd-tree (:predicate nil)
@@ -45,21 +55,10 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 	       :type (simple-array fixnum 1))
   (reverse-point-index (make-array 0 :element-type 'fixnum)
 		       :type (simple-array fixnum 1))
-  (coords (make-array 0 :element-type 'double-float)
-	  :type (simple-array double-float 1)))
+  (coords (make-array 0 :element-type 'single-float)
+	  :type (simple-array single-float 1)))
 
-
-(defun copy-array (a)
-  (declare ((array * *) a)
-	   (values (array * *) &optional))
-  (let* ((result (make-array (array-dimensions a)
-			     :element-type (array-element-type a)))
-	 (result1 (sb-ext:array-storage-vector result))
-	 (a1 (sb-ext:array-storage-vector a)))
-    (dotimes (i (length result1))
-      (setf (aref result1 i) (aref a1 i)))
-    result))
-#+ni
+#+nil
 (sb-impl::%fun-type #'select-index)
 #+nil
 (sb-kernel:specifier-type (sb-impl::%fun-type #'select-index))
@@ -68,42 +67,46 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
   "Given K in [0..n-1] modifies the index array IN to point to the K+1
   smallest values AR[IN[k]] in the front (in arbitrary order). Return
   value is IN[K] and therefore the K+1-smallest value."
-  (declare ((array double-float 1) ar)
-	   ((array fixnum 1) in)
-	   (fixnum k)
+  (declare (type (array single-float 1) ar)
+	   (type (array fixnum 1) in)
+	   (type fixnum k)
 	   (values fixnum &optional))
   (let* ((n (length in))
 	 (l 0) ;; index to leftmost element
 	 (ir (1- n))) ;; index to rightmost element
-    (format t "select-index ~a~%" (list 'n n (when (< n 4) in)))
-    (labels ((swap (p q)
-	       (unless (and (array-in-bounds-p in p)
-			    (array-in-bounds-p in q))
-		 (error "out of bounds for index array."))
-	       (let ((h (aref in p)))
-		 (setf (aref in p) (aref in q)
-		       (aref in q) h))))
-      (loop
-	 (with-arrays (in ar)
-	   (if (<= ir (1+ l))
-	       ;; active partition contains 1 or 2 el
-	       (progn (when (and (eq ir (1+ l))
-				 (< (ar (in ir)) (ar (in l))))
-			(swap l ir))
-		      (return-from select-index (in k)))
-	       ;; choose median of left center and right as partitioning element
-	       (let ((mid (floor (+ l ir) 2)))
-		 (swap mid (1+ l))
-		 ;; rearrange for ar[l]<=ar[l+1]<=ar[ir]
-		 (when (< (ar (in ir)) (ar (in l)))      (swap ir l))
-		 (when (< (ar (in ir)) (ar (in (1+ l)))) (swap ir (1+ l)))
-		 (when (< (ar (in (1+ l))) (ar (in l)))  (swap l (1+ l)))
-		 (let* ((i (1+ l))
-			(j ir)
-			(ia (in i))
-			(a (ar ia)))
-		   (loop ;; scan up and down, put big elements right,
-			 ;; small ones left
+    (format t "select-index ~a~%" (list 'n n
+					(when (< n 4) in)))
+    (with-arrays (in ar)
+     (labels ((swap (p q)
+		(unless (and (array-in-bounds-p in p)
+			     (array-in-bounds-p in q))
+		  (error "out of bounds for index array."))
+		(let ((h (aref in p)))
+		  (setf (aref in p) (aref in q)
+			(aref in q) h)))
+	      (ensure< (p q)
+		(when (< (ar (in p)) (ar (in q))) 
+		  (swap p q))))
+       (loop
+	  (if (<= ir (1+ l))
+	      (progn ;; active partition contains 1 or 2 el, finish
+		(when (and (eq ir (1+ l))
+			   (< (ar (in ir)) (ar (in l))))
+		  (swap l ir))
+		(return-from select-index (in k)))
+	      ;; choose median of left center and right as partitioning element
+	      (let ((mid (floor (+ l ir) 2)))
+		(swap mid (1+ l))
+		;; rearrange for ar[l]<=ar[l+1]<=ar[ir]
+		(ensure< ir l)
+		(ensure< ir (1+ l))
+		(ensure< (1+ l) l)
+		(let* ((i (1+ l))
+		       (j ir)
+		       (ia (in i))
+		       (a (ar ia)))
+		  (loop ;; scan up and down, put big elements right,
+		     ;; small ones left
 		     (loop do (incf i) while (< (ar (in i)) a))
 		     (loop do (decf j) while (< a (ar (in j))))
 		     (when (< j i) (return))
@@ -116,8 +119,8 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 #+nil
 (let* ((ls '(.1 .9 .1 .7 .2 .4 .6 .3 .8 .1 .5))
        (n (length ls))
-       (ar (make-array n :element-type 'double-float
-		       :initial-contents (mapcar #'(lambda (x) (* 1d0 x)) ls)))
+       (ar (make-array n :element-type 'single-float
+		       :initial-contents (mapcar #'(lambda (x) (* 10 x)) ls)))
        (in (make-array n :element-type 'fixnum
 		       :initial-contents (loop for i below n collect i))))
  (let ((ret (select-index in ar (floor n 2))))
@@ -140,7 +143,8 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
   `(member ,@(loop for i below +dim+ collect i)))
 
 (defun next-axis (axis)
-  (declare (axis axis))
+  (declare (axis axis)
+	   (values axis &optional))
   (mod (1+ axis) +dim+))
 
 (defun kd-tree (in-points)
@@ -150,28 +154,35 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 	 (m (expt 2 (ceiling (log n 2))))
 	 (point-index (make-array 
 		       n :element-type 'fixnum
-		       :initial-contents (loop for i below n collect i)))
-	 (nb (1- (min m (- (* 2 n) (floor m 2)))))
+		       :initial-contents
+		       (loop for i below n collect i)))
+	 (nb (1- (min m 
+		      (- (* 2 n) (floor m 2)))))
 	 (boxes (make-array nb :element-type 'kd-node
 			    :initial-contents
-			    (loop for i below nb collect (make-kd-node))))
+			    (loop for i below nb
+			       collect (make-kd-node))))
 	 (coords (make-array 
-		  (* +dim+ n) :element-type 'double-float
+		  (* +dim+ n) 
+		  :element-type 'single-float
 		  :initial-contents 
 		  (nconc 
-		   (loop for i below n collect (vec-x (aref in-points i)))
+		   (loop for i below n
+		      collect (vec-x (aref in-points i)))
 		   (when (<= 2 +dim+)
-		     (loop for i below n collect (vec-y (aref in-points i))))
-		   (when (<= 3 +dim+) 
-		     (loop for i below n collect (vec-z (aref in-points i)))))))
-	 (big 12d0)
-	 (ma (v big big big))
-	 (mi (v* ma -1d0))
+		     (loop for i below n 
+			collect (vec-y (aref in-points i))))
+		   #+nil (when (<= 3 +dim+) 
+		     (loop for i below n
+			collect (vec-z (aref in-points i)))))))
+	 (big 12f0)
+	 (ma (v big big))
+	 (mi (s* -1f0 ma))
 	 (task-mom (make-array 50 :element-type 'fixnum))
 	 (task-axis (make-array 50 :element-type 'axis))
 	 (nowtask 1)
 	 (j-box 0))
-    (with-arrays (task-mom task-axis boxes mi ma coords)
+    (with-arrays (task-mom task-axis boxes coords)
       (setf (boxes 0) (make-kd-node :min mi :max ma
 				    :mom 0 :left 0 :right 0
 				    :point-min 0
@@ -183,44 +194,53 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 		 (axis (task-axis nowtask))
 		 (ptmin (kd-point-min (boxes mom)))
 		 (ptmax (kd-point-max (boxes mom)))
-		 (number-of-points-in-subdivision (1+ (- ptmax ptmin)))
-		 (point-index-sub (make-array number-of-points-in-subdivision
-					      :element-type 'fixnum
-					      :displaced-to point-index
-					      :displaced-index-offset ptmin))
-		 (coord-sub (make-array n
-					:element-type 'double-float
-					:displaced-to coords
-					:displaced-index-offset (* axis n)))
+		 (number-of-points-in-subdivision 
+		  (1+ (- ptmax ptmin)))
+		 (point-index-sub 
+		  (make-array number-of-points-in-subdivision
+			      :element-type 'fixnum
+			      :displaced-to point-index
+			      :displaced-index-offset ptmin))
+		 (coord-sub
+		  (make-array n
+			      :element-type 'single-float
+			      :displaced-to coords
+			      :displaced-index-offset (* axis n)))
 		 (boundary-point-left 
 		  (floor (1- number-of-points-in-subdivision) 2)))
 	    (decf nowtask)
-	    (select-index point-index-sub coord-sub boundary-point-left)
-	    (setf ma (copy-array (kd-max (boxes mom)))
-		  mi (copy-array (kd-min (boxes mom)))
-		  (ma axis) (coords (+ (aref point-index-sub boundary-point-left)
-					(* n axis)))
-		  (mi axis) (ma axis)
-		  (boxes (incf j-box)) 
-		  (make-kd-node :min (copy-array (kd-min (boxes mom)))
-				:max ma
-				:mom mom :left 0 :right 0
-				:point-min ptmin
-				:point-max (+ ptmin boundary-point-left))
-		  (boxes (incf j-box)) 
-		  (make-kd-node :min mi
-				:max (copy-array (kd-max (boxes mom)))
-				:mom mom :left 0 :right 0
-				:point-min (+ ptmin boundary-point-left 1)
-				:point-max ptmax)
-		  (kd-left (boxes mom)) (1- j-box)
-		  (kd-right (boxes mom)) j-box)
-	    (format t "~a~%" (list 'left (1- j-box) 'right j-box 'nb nb))
-	    
+	    (select-index point-index-sub coord-sub
+			  boundary-point-left)
+	    (setf 
+	     ma (copy-vec (kd-max (boxes mom)))
+	     mi (copy-vec (kd-min (boxes mom)))
+	     (aref (vec-coord ma) axis) (coords (+ (aref point-index-sub boundary-point-left)
+						   (* n axis)))
+	     (aref (vec-coord mi) axis) (aref (vec-coord ma) axis)
+	     (boxes (incf j-box)) 
+	     (make-kd-node :min (copy-vec (kd-min (boxes mom)))
+			   :max ma
+			   :mom mom :left 0 :right 0
+			   :point-min ptmin
+			   :point-max (+ ptmin
+					 boundary-point-left))
+	     (boxes (incf j-box)) 
+	     (make-kd-node :min mi
+			   :max (copy-vec (kd-max (boxes mom)))
+			   :mom mom :left 0 :right 0
+			   :point-min (+ ptmin
+					 boundary-point-left 1)
+			   :point-max ptmax)
+	     (kd-left (boxes mom)) (1- j-box)
+	     (kd-right (boxes mom)) j-box)
+	    (format t "~a~%" (list 'left (1- j-box) 
+				   'right j-box
+				   'nb nb))
 	    (when (< 1 boundary-point-left)
 	      (setf (task-mom (incf nowtask)) (1- j-box)
 		    (task-axis nowtask) (next-axis axis)))
-	    (when (< 2 (- number-of-points-in-subdivision boundary-point-left))
+	    (when (< 2 (- number-of-points-in-subdivision 
+			  boundary-point-left))
 	      (setf (task-mom (incf nowtask)) j-box
 		    (task-axis nowtask) (next-axis axis))))))
     (let ((rpoint-index (make-array n :element-type 'fixnum)))
@@ -234,14 +254,14 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 #+nil
 (progn 
   (defparameter dkaf
-    (let* ((n 8) 
+    (let* ((n 3) 
 	   (points (make-array n :element-type 'vec
 			       :initial-contents 
 			      (loop for i below n collect
-				   (v (- (random 20d0) 10d0)
-				      (- (random 20d0) 10d0))))))
+				   (v (- (random 20f0) 10f0)
+				      (- (random 20f0) 10f0))))))
       (kd-tree points)))
-#+nil  (print-kd-tree-to-eps "/home/martin/tmp/o.eps" dkaf :scale 10d0))
+#+nil  (print-kd-tree-to-eps "/home/martin/tmp/o.eps" dkaf :scale 10f0))
 #+nil
 (defparameter kldsa
  (with-slots (boxes points)
@@ -285,8 +305,8 @@ stroke
 	   (values string &optional))
   (let* ((delta (v- max min))
 	 (dx (v (vec-x delta)))
-	 (dy (v 0d0 (vec-y delta)))
-	 (offset (v 15d0 15d0)))
+	 (dy (v 0f0 (vec-y delta)))
+	 (offset (v 15f0 15f0)))
     (format nil "0 setgray~%newpath~%~a~a~a~a~astroke~%"
 	    (eps-moveto (v+ offset min))
 	    (eps-lineto (v+ offset (v+ min dx)))
@@ -294,10 +314,10 @@ stroke
 	    (eps-lineto (v+ offset (v+ min dy)))
 	    (eps-lineto (v+ offset min)))))
 
-(defun print-kd-tree-to-eps (fn kd-tree &key (scale 1d0))
+(defun print-kd-tree-to-eps (fn kd-tree &key (scale 1f0))
   (declare (string fn)
 	   (kd-tree kd-tree)
-	   ((double-float 0d0) scale)
+	   ((single-float 0f0) scale)
 	   (values null &optional))
   (with-open-file (s fn :direction :output :if-exists :supersede)
     (format s "%!PS-Adobe-3.0
@@ -308,7 +328,7 @@ stroke
     (with-slots (boxes points)
 	kd-tree
       (with-arrays (boxes points)
-       (let ((dz (v 1.d0 1.d0)))
+       (let ((dz (v 1.f0 1.f0)))
 	 (format t "~a" (list 'print 'length-boxes (length boxes)))
 	 (dotimes (i (length boxes))
 	   (with-slots (max min left right)
@@ -316,18 +336,18 @@ stroke
 	     (format t "~a~%" (list i left right))
 	     (unless (and (eq left 0)
 			  (eq right 0))
-	       (format s (eps-linewidth (* .02d0 i)))
-	       (format s (eps-rectangle (v+ (v* dz (* .04d0 i)) min)
-					(v+ (v* dz (* .04d0 i)) max))))))
-	 (format s (eps-linewidth .9d0))
+	       (format s (eps-linewidth (* .02f0 i)))
+	       (format s (eps-rectangle (v+ (s* (* .04f0 i) dz) min)
+					(v+ (s* (* .04f0 i) dz) max))))))
+	 (format s (eps-linewidth .9f0))
 	 (dotimes (i (length points))
-	   (format s (eps-point (v+ (v 15d0 15d0) (points i))))))))
+	   (format s (eps-point (v+ (v 15f0 15f0) (points i))))))))
     (format s "%%EOF~%"))
   nil)
 #+nil
-(print-kd-tree-to-eps "/home/martin/tmp/o.eps" dkaf :scale 10d0)
+(print-kd-tree-to-eps "/home/martin/tmp/o.eps" dkaf :scale 10f0)
 (defun eps-linewidth (s)
-  (declare (double-float s)
+  (declare (single-float s)
 	   (values string &optional))
   (format nil "~f setlinewidth~%" s))
 (defun eps-point (vec)
@@ -349,11 +369,11 @@ stroke
 (defun kd-tree-point-distance (tree p q)
   (declare (kd-tree tree)
 	   (fixnum p q)
-	   (values double-float &optional))
+	   (values single-float &optional))
   (with-slots (points)
       tree
     (if (eq p q)
-	1d20
+	1f20
 	(norm (v- (aref points p) (aref points q))))))
 
 #+nil
@@ -371,16 +391,17 @@ stroke
       (loop while (< 0 (kd-left (aref boxes nb))) do
 	   (setf
 	    d1 (kd-left (aref boxes nb))
-	    nb (if (<= (aref point jdim) (aref (kd-max (aref boxes d1)) jdim))
+	    nb (if (<= (aref (vec-coord point) jdim) (aref (vec-coord (kd-max (aref boxes d1)))
+							   jdim))
 		   d1
 		   (kd-right (aref boxes nb)))
 	    jdim (mod (1+ jdim) 3)))
       nb)))
 #+nil
-(locate-point-in-tree (v 1d0 1d0 1d0) dkaf)
+(locate-point-in-tree (v 1f0 1f0 1f0) dkaf)
 #+nil
 (aref (kd-tree-boxes dkaf)
-      (locate-point-in-tree (v 1d0 1d0 1d0) dkaf))
+      (locate-point-in-tree (v 1f0 1f0 1f0) dkaf))
 
 (defun locate-point-index-in-tree (point-index tree)
   "Return the index of the box that contains the point given by
