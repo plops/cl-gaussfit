@@ -43,7 +43,7 @@ copy-v."
 			      (type single-float new)
 			      (values single-float &optional))
 		     (setf (aref (vec-coord v) ,i) new))))
-	   `((defun %v ,(append '(&optional)
+	   `((defun v ,(append '(&optional)
 			        (loop for a in '(x y z w) and i below +dim+ collect
 				    `(,a 0f0)))
 	       (declare ,(append '(type single-float)
@@ -54,16 +54,6 @@ copy-v."
 			(loop for a in '(x y z w) and i below +dim+ collect
 			     `(setf (,(name a) ve) ,a))
 			'(ve)))
-	     (define-compiler-macro v (&optional (x 0f0) (y 0f0))
-	       (if ,(append '(and)
-			    (loop for a in '(x y z w) and i below +dim+ collect
-				 `(typep ,a 'single-float)))
-		   ,(append '(%v)
-			   (loop for a in '(x y z w) and i below +dim+ collect
-			      a))
-		   ,(append '(%v)
-			   (loop for a in '(x y z w) and i below +dim+ collect
-			      `(* 1f0 ,a)))))
 	     (defun copy-vec (v)
 	       (declare (type vec v)
 			(values vec &optional))
@@ -117,6 +107,8 @@ copy-v."
 
 (def-vec-op +)
 (def-vec-op -)
+
+
 
 #+nil
 (v+ (v 1 2) (v 3 4))
