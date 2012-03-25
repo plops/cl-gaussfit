@@ -1,6 +1,8 @@
 (defpackage #:math.vector
   (:use :cl)
-  (:export #:v
+  (:export #:+dim+
+	   #:v
+	   #:copy-vec
 	   #:vec-x
 	   #:vec-y
 	   #:vec-z
@@ -8,89 +10,111 @@
 	   #:norm
 	   #:v+
 	   #:v-
-	   #:s*
-	   #:cross
-	   #:rotation-matrix))
+	   #:s*))
 
 (in-package #:math.vector)
 
 (declaim (optimize (speed 3) (safety 1) (debug 1)))
 
-(deftype vec3 ()
-    '(simple-array single-float (3)))
+(defconstant +dim+ 2)
+
+(defstruct (vec (:constructor %make-vec)
+		(:copier %copy-vec)) 
+  (coord (make-array +dim+ 
+		     :element-type 'single-float
+		     :initial-element 0f0)
+	 :type (simple-array single-float #.(list +dim+))))
 
 
-(defun v (&optional (x 0s0) (y 0s0) (z 0s0))
-  (if (and (typep x 'single-float)
-	   (typep y 'single-float)
-	   (typep z 'single-float)) 
-      (make-array 3 :element-type 'single-float ;; .04e-6s 
-		  :initial-contents (list x y z))
-      (make-array 3 :element-type 'single-float ;; .5e-6s
-		  :initial-contents (mapcar #'(lambda (x) (* 1s0 x))
-					    (list x y z)))))
+(defmacro def-coord-access ()
+  "define vec-x, vec-y, ..., (setf vec-x), ..., (v .2 .4) and 
+copy-v."
+  (labels ((name (axis)
+	     (intern (format nil "VEC-~a" axis))))
+   (append '(progn)
+	   (loop for a in '(x y z w) and i below +dim+ collect
+		`(progn
+		   (defun ,(name a) (v)
+		     (declare (type vec v)
+			      (values single-float &optional))
+		     (aref (vec-coord v) ,i))
+		   (defun (setf ,(name a)) (new v)
+		     (declare (type vec v)
+			      (type single-float new)
+			      (values single-float &optional))
+		     (setf (aref (vec-coord v) ,i) new))))
+	   `((defun v ,(append '(&optional)
+			       (loop for a in '(x y z w) and i below +dim+ collect
+				    `(,a 0f0)))
+	      ; (declare (values vec &optional))
+	       ,(append '(let* ((ve (%make-vec))))
+			(loop for a in '(x y z w) and i below +dim+ collect
+			      `(setf (,(name a) ve) (* 1f0 ,a)))
+			'(ve)))
+	     (defun copy-vec (v)
+	       (declare (type vec v)
+			(values vec &optional))
+	       (let ((b (%copy-vec v)))
+		 (setf (vec-coord b) (copy-seq (vec-coord v)))
+		 b))))))
+
+(def-coord-access)
+
+
 #+nil
-(time
- (dotimes (i 10000000)
-   (let ((a (v .2))))))
-
-(declaim (inline vec-x vec-y vec-z))
-(declaim (ftype (function (vec3) single-float) vec-x vec-y vec-z))
-(defun vec-x (v)
-  (aref v 0))
-(defun vec-y (v)
-  (aref v 1))
-(defun vec-z (v)
-  (aref v 2))
+(let ((a (v .1 .2)))
+  (list (copy-v a)
+	(setf (vec-x a) .3)
+	(vec-x a)
+	a))
 
 (defun v. (a b)
-  (declare (type vec3 a b))
-  (let ((sum 0s0))
-   (dotimes (i (length a))
-     (incf sum (* (aref a i) (aref b i))))
-   sum)) 
+  (declare (type vec a b)
+	   (values (single-float -1f0 1f0) &optional))
+  (let ((sum 0f0)
+	(ac (vec-coord a))
+	(bc (vec-coord b)))
+   (dotimes (i (length ac))
+     (incf sum (* (aref ac i) (aref bc i))))
+   sum))
 
 (defun norm (v)
-  (declare (type vec3 v))
+  (declare (type vec v)
+	   (values (single-float 0f0 *) &optional))
   (let ((a (v. v v))) 
-    (if (< a 0s0)
-	0s0
+    (if (<= a 0f0)
+	0f0
 	(sqrt a))))
 
 (defmacro def-vec-op (op)
   `(defun ,(intern (format nil "V~a" op)) (a b)
-     (declare (type vec3 a b))
-     (let ((c (v)))
-       (dotimes (i (length a))
-	 (setf (aref c i) (,op (aref b i) (aref a i))))
+     (declare (type vec a b)
+	      (values vec &optional))
+     (let* ((c (v))
+	    (cc (vec-coord c))
+	    (ac (vec-coord a))
+	    (bc (vec-coord b)))
+       (dotimes (i (length ac))
+	 (setf (aref cc i) (,op (aref bc i) (aref ac i))))
        c)))
 
 (def-vec-op +)
 (def-vec-op -)
 
 #+nil
-(v+ (v 1 2 3) (v 3 4 5))
+(v+ (v 1 2) (v 3 4))
 #+nil
-(reduce #'v+ (list (v 1 2 3)
-		   (v 0 0 1)
-		   (v 1 0 0)
-		   (v 0 1 0)))
+(reduce #'v+ (list (v 1 2)
+		   (v 0 2)
+		   (v 1 0)
+		   (v 0 1)))
 
-(defun s* (scalar vec) ;; .04e-6 s
+(defun s* (scalar vec) 
   (declare (type single-float scalar)
-	   (type vec3 vec))
-  (let ((r (v)))
-    (dotimes (i (length vec))
-      (setf (aref r i) (* scalar (aref vec i))))
+	   (type vec vec))
+  (let* ((r (v))
+	 (rc (vec-coord r))
+	 (vc (vec-coord vec)))
+    (dotimes (i (length vc))
+      (setf (aref rc i) (* scalar (aref vc i))))
     r))
-
-(defun cross (a b)
-  (v (- (* (vec-y a) (vec-z b))
-	(* (vec-z a) (vec-y b)))
-     (- (* (vec-z a) (vec-x b))
-	(* (vec-x a) (vec-z b)))
-     (- (* (vec-x a) (vec-y b))
-	(* (vec-y a) (vec-x b)))))
-
-#+nil
-(cross (v 0 0 1) (v 1 0 0))

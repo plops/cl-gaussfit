@@ -5,10 +5,10 @@
   smallest values in the front (in arbitrary order). Return value is
   AR[K] and therefore the K+1-smallest value."
   (declare (type (simple-array single-float 1) ar)
-	   (fixnum k)
+	   (type fixnum k)
 	   (values single-float &optional))
   (let* ((n (length ar))
-	 (a 0d0)
+	 (a 0s0)
 	 (i 0)
 	 (j 0)
 	 (mid 0)
@@ -17,19 +17,22 @@
     (labels ((swap (p q)
 	       (let ((h (aref ar p)))
 		 (setf (aref ar p) (aref ar q)
-		       (aref ar q) h)))
+		       (aref ar q) h)
+		 (values)))
 	     (ensure< (p q)
 	       (when (< (aref ar p) (aref ar q))
-		 (swap q p))))
+		 (swap q p))
+	       (values)))
      (loop
 	(if (<= ir (1+ l))
-	    ;; active partition contains 1 or 2 el
-	    (progn (when (and (eq ir (1+ l))
-			      (< (aref ar ir) (aref ar l)))
-		     (swap l ir))
-		   (return-from select (aref ar k)))
-	    ;; choose median of left center and right as partitioning element
+	    (progn ;; indices of both sides met, finished
+	      (when (and (eq ir (1+ l)) ;; active partition contains 1 or 2 el
+			 (< (aref ar ir) (aref ar l)))
+		(swap l ir))
+	      (return-from select (aref ar k)))
 	    (progn 
+	      ;; choose median of left center and right as
+	      ;; partitioning element
 	      (setf mid (floor (+ l ir) 2))
 	      (swap mid (1+ l))
 	      ;; rearrange for ar[l]<=ar[l+1]<=ar[ir]
@@ -41,10 +44,8 @@
 		    j ir
 		    a (aref ar i))
 	      (loop ;; scan up and down, put big elements right, small ones left
-		 (loop do (incf i)
-		    while (< (aref ar i) a))
-		 (loop do (decf j)
-		    while (< a (aref ar j)))
+		 (loop do (incf i) while (< (aref ar i) a))
+		 (loop do (decf j) while (< a (aref ar j)))
 		 (when (< j i)
 		   (return))
 		 (swap i j))
@@ -64,20 +65,21 @@
   (time 
    (select a nh)))
 #+nil
-(dotimes (i 10000)
-  (let* ((n (1+ (random 1090)))
-	 (k (random n))
+(time
+ (dotimes (i 1000)
+   (let* ((n (1+ (random 10900)))
+	  (k (random n))
   
-	 (a (make-array n
-			:element-type 'single-float
-			:initial-contents (loop for i below n collect
-					       (* 1s0 (random 10))))))
-    (select a k)
-    (format t "~a~%" (list 'i i 'n n 'k k))
-    (when (and (< (1+ k) (- n 1)))
-      (let ((ma (reduce #'max
-			(subseq a 0 (1+ k))))
-	    (mi (reduce #'min 
-			(subseq a (1+ k)))))
-	(unless (<= ma mi)
-	  (error "there is a too big element on the left"))))))
+	  (a (make-array n
+			 :element-type 'single-float
+			 :initial-contents (loop for i below n collect
+						(* 1s0 (random 1.12))))))
+     (select a k)
+     ;;(format t "~a~%" (list 'i i 'n n 'k k))
+     (when (and (< (1+ k) (- n 1)))
+       (let ((ma (reduce #'max
+			 (subseq a 0 (1+ k))))
+	     (mi (reduce #'min 
+			 (subseq a (1+ k)))))
+	 (unless (<= ma mi)
+	   (error "there is a too big element on the left")))))))

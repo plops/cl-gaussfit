@@ -1,8 +1,7 @@
 (declaim (optimize (speed 2) (safety 3) (debug 3)))
 
-#.(require :vector)
 (defpackage :kdtree
-  (:use :cl :vector))
+  (:use :cl))
 (in-package :kdtree)
 
 (defmacro with-arrays (arrays &body body)
