@@ -85,30 +85,6 @@
 		dim j))))
     dim))
 
-(defun make-random-vec-of-dim (dim)
-  (declare ((integer 0) dim)
-	   (values (simple-array single-float 1) &optional))
-  (make-array dim
-	      :element-type 'single-float
-	      :initial-contents (loop repeat dim collect
-				     (random 1f0))))
-
-(defun make-random-points (n)
-  (declare (array-index-t n)
-	   (values (simple-array vec 1) &optional))
-  (make-array n :element-type '(array * (#.+dim+))
-	      :initial-contents
-	      (loop for i below n collect
-		   (make-random-vec-of-dim +dim+))))
-
-#+nil ;; check that all dimensions appear for random points
-(loop repeat 30 collect
-     (let* ((n 1000)
-	    (kd (build-new-tree (make-random-points n)))
-	    (*perm* (kd-tree-perm kd))
-	    (*points* (kd-tree-points kd)))
-       (find-max-spread-dimension 0 (1- n))))
-
 (defun swap (a b)
   (declare (array-index-t a b)
 	   (values null &optional))
@@ -134,15 +110,15 @@
 	     (return-from select (aref *perm* m)))
 	   (let ((mid (floor (+ u l) 2)))
 	     (swap mid (1+ l))
-	     (labels ((enforce-order (l u)
+	     (labels ((enforce< (l u)
 			(declare (fixnum l u)
 				 (values null &optional))
 			(when (< (p u) (p l)) (swap u l))
 			nil))
 	       ;; rearrange for p[l]<=p[l+1]<=p[u]
-	       (enforce-order l u)
-	       (enforce-order (1+ l) u)
-	       (enforce-order l (1+ l)))
+	       (enforce< l u)
+	       (enforce< (1+ l) u)
+	       (enforce< l (1+ l)))
 	     (let* ((i (1+ l))
 		    (j u)
 		    (ia (aref *perm* i))
@@ -157,15 +133,6 @@
 		     (aref *perm* j) ia)
 	       (when (<= m j) (setf u (1- j)))
 	       (when (<= j m) (setf l i))))))))
-
-#+nil 
-(let* ((n 35)
-       (*perm* (make-perm n))
-       (*points* (make-random-points n)))
-  (select 0 (1- n) (floor (+ 0 (1- n)) 2)
-	  0)
-  (loop for i below n collect (read-from-string
-			       (format nil "~d" (px i 0)))))
 
 (defun build (l u)
   (declare (array-index-t l u)
