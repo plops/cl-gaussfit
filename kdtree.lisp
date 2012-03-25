@@ -1,7 +1,7 @@
 (declaim (optimize (speed 2) (safety 3) (debug 3)))
 
 (defpackage :kdtree
-  (:use :cl))
+  (:use :cl :math.vector))
 (in-package :kdtree)
 
 (defmacro with-arrays (arrays &body body)
@@ -14,36 +14,6 @@ so that (ARRAY ...) corresponds to (AREF ARRAY ...)."
 
 (defconstant +dim+ 2)
 
-(defstruct (box (:predicate nil)
-		(:copier nil))
-  (min (v) :type vec)
-  (max (v) :type vec))
-
-;; when the point has a coordinate that is greater than hi or smaller
-;; than lo it contributes to sum, otherwise not.
-(defun distance-point-box (vec box)
-  "If VEC is a point outside the BOX, its distance to the nearest
-point on BOX is returned. If VEC is inside or on the surface 0d0 is
-returned."
-  (declare (box box)
-	   (vec vec)
-	   (values double-float &optional))
-  (let ((sum 0d0))
-    (dotimes (i +dim+)
-      (let ((p (aref vec i))
-	    (l (aref (box-min box) i))
-	    (h (aref (box-max box) i)))
-	#+nil (format t "~a~%" (list l p h))
-       (when (< p l)
-	 (incf sum (expt (- l p) 2d0)))
-       (when (< h p)
-	 (incf sum (expt (- p h) 2d0)))))
-    (sqrt sum)))
-
-#+nil
-(distance-point-box (v -1d0)
-		    (make-box :lo (v) :hi (v 1d0 1d0 1d0)))
-
 (defstruct (kd-node (:include box)
 		    (:conc-name "KD-")
 		    (:predicate nil)
@@ -53,6 +23,15 @@ returned."
   (right 0 :type fixnum)
   (point-min 0 :type fixnum)
   (point-max 0 :type fixnum))
+
+#+nil
+(let ((a (make-kd-node :min (v .1 .2))))
+  (list (sb-sys:vector-sap (vec-coord (box-min a))) 
+	(sb-sys:vector-sap (vec-coord (box-min (copy-box a))))))
+
+(defun copy-kd-node (node)
+  (let ((a))))
+
 
 (defstruct (kd-tree (:predicate nil)
 		    (:copier nil))
@@ -69,25 +48,6 @@ returned."
   (coords (make-array 0 :element-type 'double-float)
 	  :type (simple-array double-float 1)))
 
-
-#+nil(defun do-spatial ((array &rest extends) &body body)
-  (etypecase array
-    ((simple-array double-float 2)
-     `(destructuring-bind (y x)
-	  (array-dimensions array)
-	(let ((x- 0) (x+ x)
-	      (y- 0) (y+ y))
-	  (when extends
-	    (destructuring-bind ))
-	  (dotimes (j y)
-	    (dotimes (i x)
-	      .@body)))))
-    (t `(error ,(format nil "do-spatial for ~a not implemented." (type-of array))))))
-#+nil
-(let ((a (make-array (list 12 13) :element-type 'double-float)))
-  (funcall (compiler-macro-function 'do-spatial)
-	   '(do-spatial a '((0 3) (4 5) (4 8))
-	     (setf a 0 0) 0d0) nil))
 
 (defun copy-array (a)
   (declare ((array * *) a)

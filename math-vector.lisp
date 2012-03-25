@@ -1,8 +1,10 @@
 (defpackage #:math.vector
   (:use :cl)
   (:export #:+dim+
+	   #:vec
 	   #:v
 	   #:copy-vec
+	   #:vec-coord
 	   #:vec-x
 	   #:vec-y
 	   #:vec-z
@@ -11,6 +13,7 @@
 	   #:v+
 	   #:v-
 	   #:s*
+	   #:box
 	   #:make-box
 	   #:copy-box
 	   #:box-min
@@ -143,7 +146,8 @@ copy-v."
 	   (values box &optional))
   (let ((r (%copy-box b)))
     (setf (box-min r) (copy-vec (box-min b))
-	  (box-max r) (copy-vec (box-max b)))))
+	  (box-max r) (copy-vec (box-max b)))
+    r))
 
 
 
