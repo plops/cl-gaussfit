@@ -10,7 +10,13 @@
 	   #:norm
 	   #:v+
 	   #:v-
-	   #:s*))
+	   #:s*
+	   #:make-box
+	   #:copy-box
+	   #:box-min
+	   #:box-max
+	   #:distance-point-box
+	   ))
 
 (in-package #:math.vector)
 
@@ -37,7 +43,7 @@ copy-v."
 		   (defun ,(name a) (v)
 		     (declare (type vec v)
 			      (values single-float &optional))
-		     (aref (vec-coord v) ,i))
+*		     (aref (vec-coord v) ,i))
 		   (defun (setf ,(name a)) (new v)
 		     (declare (type vec v)
 			      (type single-float new)
@@ -127,3 +133,41 @@ copy-v."
     (dotimes (i (length vc))
       (setf (aref rc i) (* scalar (aref vc i))))
     r))
+
+(defstruct (box (:copier %copy-box))
+  (min (v) :type vec)
+  (max (v) :type vec))
+
+(defun copy-box (b)
+  (declare (type box b)
+	   (values box &optional))
+  (let ((r (%copy-box b)))
+    (setf (box-min r) (copy-vec (box-min b))
+	  (box-max r) (copy-vec (box-max b)))))
+
+
+
+;; when the point has a coordinate that is greater than hi or smaller
+;; than lo it contributes to sum, otherwise not.
+(defun distance-point-box (vec box)
+  "If VEC is a point outside the BOX, its distance to the nearest
+point on BOX is returned. If VEC is inside or on the surface 0.0 is
+returned."
+  (declare (type box box)
+	   (type vec vec)
+	   (values (single-float 0f0) &optional))
+  (let ((sum 0f0))
+    (declare (type (single-float 0f0) sum))
+    (dotimes (i +dim+)
+      (let ((p (aref (vec-coord vec) i))
+	    (l (aref (vec-coord (box-min box)) i))
+	    (h (aref (vec-coord (box-max box)) i)))
+	(when (< p l)
+	  (incf sum (expt (- l p) 2)))
+	(when (< h p)
+	  (incf sum (expt (- p h) 2)))))
+    (sqrt sum)))
+
+#+nil
+(distance-point-box (v .1f0)
+		    (make-box :min (v) :max (v 1f0 1f0)))
