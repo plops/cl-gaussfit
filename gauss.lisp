@@ -1,3 +1,11 @@
+(defpackage :gauss
+  (:use :cl :utils :gauss-fit 
+	:gauss-blur :fits-file
+	:statistics
+	:sb-ext))
+(in-package :gauss)
+
+(declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (defvar *rand* .9)
 
@@ -8,16 +16,6 @@
 	 (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
 	 (e (exp arg)))
     (+ b (* a e))))
-
-
-(defun fill-img ()
- (defparameter *img*
-   (let ((a (make-array '(5 5) :element-type 'double-float)))
-     (destructuring-bind (h w) (array-dimensions a)
-       (dotimes (j h)
-	 (dotimes (i w)
-	   (setf (aref a j i) (g i j 2.3d0 2.5d0 .7d0 .005d0 2d0)))))
-     a)))
 
 ;; load the data and swap endian
 (defvar *imgs*
@@ -37,7 +35,6 @@
 			     (* 256 (ldb (byte 8 0) (aref a i))))))
       b)))
 
-(declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (defun find-max (stack)
   (declare (type (simple-array (unsigned-byte 16) 3) stack))
@@ -51,197 +48,6 @@
 
 #+nil
 (time (find-max *imgs*))
-
-(defun make-histograms (stack)
-  (declare (type (simple-array (unsigned-byte 16) 3) stack))
-  (destructuring-bind (z y x) (array-dimensions stack)
-    (declare (type fixnum z y x))
-    (let* ((ma (1+ (find-max stack)))
-	   (n 500)
-	   (ni 100) ;; combine ni=100 images into histogram
-	   (stack1 (array-storage-vector stack))
-	   (hist (make-array (list (floor z ni) n) :element-type 'fixnum)))
-       (declare (type (simple-array fixnum 2) hist)
-		(type fixnum n ni ma))
-       (dotimes (k z) 
-	 (let ((ko (floor k ni)))
-	   (dotimes (j y)
-	     (dotimes (i x) 
-	       (incf (aref hist ko
-			   (floor (* n (aref stack k j i))
-				  ma)))))))
-       hist)))
-#+nil
-(time
- (defparameter *hists* (make-histograms *imgs*)))
-
-
-(defun scale-log (img)
-  (let* ((n (array-total-size img)) 
-	 (i1 (make-array n
-			 :element-type (array-element-type img)
-			 :displaced-to img))
-	(ma (1+ (reduce #'max i1))))
-    (dotimes (i n)
-      (let ((v (aref i1 i)))
-       (setf (aref i1 i) (if (= v 0)
-			     0
-			     (floor (* (expt 2 15) (log v))
-				    (log ma))))))
-    img))
-
-(defun copy-img (img)
-  (let* ((i1 (make-displaced-array img))
-	 (d1 (make-array (array-dimensions i1)
-			 :element-type (array-element-type i1)
-			 :displaced-to i1))
-	 (c1 (subseq d1 0))
-	 (c (make-array (array-dimensions img)
-			:element-type (array-element-type img)
-			:displaced-to c1)))
-    c))
-
-
-#+nil
-(time
- (write-fits "/dev/shm/hist.fits" (scale-log (copy-img *hists*))))
-
-#+nil
-(time
- (defparameter *hists*
-   (destructuring-bind (z y x) (array-dimensions *imgs*)
-     (let* ((ma (1+ (find-max *imgs*)))
-	    (n 400)
-	    (ni 30) ;; combine ni=100 images into histogram
-	    (hist (make-array (list (ceiling z ni) n) :element-type 'fixnum)))
-       (dotimes (k z)
-	 (dotimes (j y)
-	   (dotimes (i x)
-	     (incf (aref hist (floor k ni) 
-			 (floor (* n (aref *imgs* k j i)) ma))))))
-       (let ((ma (reduce #'max (array-storage-vector hist)))) 
-	 (when (< (1- (expt 2 16)) ma)
-	  (error "maximum count ~d in histogram doesn't fit into 16 bit" ma)))
-       (let* ((a (make-array (array-dimensions hist)
-			     :element-type '(unsigned-byte 16)))
-	      (a1 (array-storage-vector a))
-	      (h1 (array-storage-vector hist)))
-	 (dotimes (i (length a1))
-	   (setf (aref a1 i) (aref h1 i)))
-	 a)))))
-
-
-;; i now want to separate background and signal. ideally i would just
-;; create masks to select background, but i don't see a robust way to
-;; do that. instead i will subtract images. i expect the histogram of
-;; those to contain a gaussian distribution centered on 0. its sigma
-;; should be the same as the background sigma.
-
-;; i hope that the signal's contribution is separated a bit better in
-;; the histogram. for this i shouldn't subtract consecutive images but
-;; ensure, that molecules are in different positions in both images.
-
-;; eventually i would like to know the sigma and mean of the
-;; background, so that i can select events that are brighter than,
-;; i.e. 5 sigma
-
-
-;; calculate average over each image
-#+nil
-(defparameter *imgs-avg*
-  (destructuring-bind (z y x) (array-dimensions *imgs*)
-    (loop for k below z collect
-	 (let ((sum 0))
-	   (dotimes (j y)
-	     (dotimes (i x)
-	       (incf sum (aref *imgs* k j i))))
-	   sum))))
-
-;; accumulate histograms of the averages to determine which images have events
-#+nil
-(defparameter *imgs-avg-hist*
- (let* ((ma (1+ (reduce #'max *imgs-avg*)))
-	(n 10)
-	(hist (make-array n :element-type 'fixnum)))
-   (dolist (e *imgs-avg*)
-     (incf (aref hist (floor (* n e) ma))))
-   (loop for j from 0 and i across hist collect
-	(list (floor (* ma (/ 1d0 n) j)) i))))
-
-;; select images with bright events
-#+nil
-(defparameter *imgs-with-event*
-  (let ((ma (1+ (reduce #'max *imgs-avg*))))
-    (loop for k from 0 and e in *imgs-avg* 
-       when (< 49000 e) ;(< .51 (/ e	ma))
-       collect k)))
-
-;; show avgs as well
-#+nil
-(defparameter *im*
- (loop for e in *imgs-more-events* collect
-      (list e (elt *imgs-avg* e))))
-
-;; plot data
-#+nil
-(progn
- (with-open-file (s "/dev/shm/o.dat"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "~{~{~6d ~6d~}~%~}" *im*))
- (with-open-file (s "/dev/shm/o.gp"
-		    :direction :output
-		    :if-exists :supersede
-		    :if-does-not-exist :create)
-   (format s "plot \"/dev/shm/o.dat\" u 1:2 w l; pause -1"))
- (run-program "/usr/bin/gnuplot" '("/dev/shm/o.gp")))
-
-
-(defun extract-frame (img k)
-  (destructuring-bind (z y x) (array-dimensions img)
-    (let* ((start (* x y k))
-	   (i1 (make-array (* x y) :element-type (array-element-type img)
-			   :displaced-to img
-			   :displaced-index-offset start))
-	   (c1 (subseq i1 0)))
-      (make-array (list y x) 
-		  :element-type (array-element-type img)
-		  :displaced-to c1))))
-
-
-
-(defun img-op (op a b)
-  (let* ((a1 (make-displaced-array a))
-	 (b1 (make-displaced-array b))
-	 (c (make-array (array-dimensions a)
-			:element-type 'single-float))
-	 (c1 (make-displaced-array c)))
-    (dotimes (i (length a1))
-      (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
-    c))
-
-(defun img-mask (img mask &key (background 0))
-  (unless (= (array-total-size img)
-	     (array-total-size mask))
-    (error "mask ~d and image ~d don't have the same length"
-	   (array-total-size mask)
-	   (array-total-size img)))
-  (let* ((a1 (make-displaced-array img))
-	 (b1 (make-displaced-array mask))
-	 (c (make-array (array-dimensions img)
-			:initial-element (coerce background
-						 (array-element-type img))
-			:element-type (array-element-type img)))
-	 (c1 (make-displaced-array c)))
-    (dotimes (i (length a1))
-      (when (aref b1 i)
-	(setf (aref c1 i) (aref a1 i))))
-    c))
-
-
-
-
 
 #+nil
 (time
@@ -270,63 +76,6 @@
 	      #+nil (mark-points dog (find-local-maxima dog))))))
    #+nil(write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
 
-;; use corrected two pass algorithm 14.1.8 numerical recipes in C
-;; 1/(N-1) * (sum_j (x_j-m)^2 - 1/N (sum_j (x_j-m))^2) 
-;; second term corrects round-off error
-
-(defun get-statistics (pic-list &key mask-list)
-  (if mask-list
-      (let* ((mean (let ((sum 0)
-			 (n 0))
-		     (loop for e in pic-list and m in mask-list do
-			  (let ((e1 (make-displaced-array e))
-				(m1 (make-displaced-array m)))
-			    (loop for g across e1 and mask across m1 
-			       when mask
-			       do (incf sum g)
-				 (incf n))))
-		     (* sum (/ 1d0 n))))
-	     (s1 (let ((n 0)
-		       (sum 0)) 
-		   (loop for e in pic-list and m in mask-list do
-			(let ((e1 (make-displaced-array e))
-			      (m1 (make-displaced-array m)))
-			  (loop for g across e1 and mask across m1 
-			     when mask
-			     do (incf n) 
-			       (incf sum (expt (- g mean) 2)))))
-		   sum))
-	     (n 0)
-	     (s2 (let ((sum 0)) 
-		    (loop for e in pic-list and m in mask-list do
-			 (let ((e1 (make-displaced-array e))
-			       (m1 (make-displaced-array m)))
-			   (loop for g across e1 and mask across m1 
-			      when mask
-			      do (incf n) 
-				(incf sum (- g mean)))))
-		    sum))
-
-	     (var (/ (- s1 (/ (expt s2 2) n))
-		     (1- n))))
-	
-	(format t "~a" (list 'mean mean (* 1d0 mean) 's1 s1 'stddev1 (sqrt (/ s1 (1- n))) 's2 s2 'var var 'stddev (sqrt var)			     ))
-	(values mean (sqrt var)))
-      (let* ((n (* (length pic-list) (array-total-size (first pic-list))))
-	     (mean (/ (loop for e in pic-list sum
-			   (reduce #'+ (make-displaced-array e)))
-		      n))
-	     (s1 (loop for e in pic-list sum 
-		      (loop for g across (make-displaced-array e) sum
-			   (expt (- g mean) 2))))
-	     (s2 (loop for e in pic-list sum
-		      (loop for g across (make-displaced-array e) sum
-			   (- g mean))))
-	     (var (/ (- s1 (/ (expt s2 2) n))
-		     (1- n))))
-	(format t "~a" (list 'mean mean (* 1d0 mean) 's1 s1 'stddev1 (sqrt (/ s1 (1- n))) 's2 s2 'var var 'stddev (sqrt var)
-			     ))
-	(values mean (sqrt var)))))
 
 ;; find histogram and statistics of difference of gaussian images
 #+nil
@@ -387,6 +136,7 @@
 	       (setf (aref a j i) t)))
      (dolist (p points)
        (destructuring-bind (y x val) p
+	 (declare (ignore val))
 	 (loop for j from -5 upto 5 do
 	   (loop for i from -5 upto 5 do
 		(let ((xx (+ x i))
@@ -435,7 +185,7 @@ pause -1
 		 stddev))
        (defparameter *blur-10x10masked* (loop for e in *blur* and m in masks
 					   collect
-					     (img-mask (copy-img e) m
+					     (img-apply-mask (copy-img e) m
 						       :background mean))))
      #+nil (write-fits "/dev/shm/blur-10x10masked.fits" 
 		 (img-list->stack *blur-10x10masked*)))))
@@ -529,7 +279,7 @@ pause -1
        (get-statistics ims :mask-list masks)
      (let ((masked-images 
 	    (loop for e in ims and m in masks collect
-		 (img-mask (ub16->single-2 e) m
+		 (img-apply-mask (ub16->single-2 e) m
 			   :background mean))))
        (with-open-file (s "/dev/shm/raw.dat" :direction :output
 			  :if-does-not-exist :create :if-exists :supersede)
@@ -749,88 +499,11 @@ pause -1
 ;; window are rejected
 ;; many points have dx < .2
 
-(defun find-local-maxima (im)
-  "returns j i val"
-  (destructuring-bind (h w) (array-dimensions im)
-    (macrolet 
-	((compare-expand (&rest pos)
-	   `(and ,@(remove-if 
-		    #'null
-		    (loop for e in pos and p in '((-1 1) (0 1) (1 1)
-						  (-1 0) (0 0) (1 0)
-						  (-1 -1) (0 -1) (1 -1)) collect
-			 (when (= e 1)
-			   (destructuring-bind (x y) p
-			     (unless (= 0 x y)
-			       ;; j is upside down
-			       `(<= (aref im (- j ,y) (+ i ,x)) 
-				   (aref im j i))))))))))
-      (let ((res ())
-	    (m 1)) 
-	;; 4 edges
-	(let ((i 0) (j 0)) ;; up left
-	  (when (compare-expand 0 0 0
-				0 1 1
-				0 1 1)
-	    (push (list j i (aref im j i)) res)))
-	(let ((i (1- w)) (j 0)) ;; up right
-	  (when (compare-expand 0 0 0
-				1 1 0
-				1 1 0)
-	    (push (list j i (aref im j i)) res)))
-	(let ((i 0) (j (1- h))) ;; down left
-	  (when (compare-expand 0 1 1
-				0 1 1
-				0 0 0)
-	    (push (list j i (aref im j i)) res)))
-	(let ((i (1- w)) (j (1- h))) ;; down right
-	  (when (compare-expand 1 1 0
-				1 1 0
-				0 0 0)
-	    (push (list j i (aref im j i)) res)))
-	;; left and right column
-	(loop for j from m below (- h m 1) do
-	     (let ((i 0))
-	       (when (compare-expand 0 1 1
-				     0 1 1
-				     0 1 1)
-		 (push (list j i (aref im j i)) res)))
-	     (let ((i (1- w)))
-	       (when (compare-expand 1 1 0
-				     1 1 0
-				     1 1 0)
-		 (push (list j i (aref im j i)) res))))
-	;; top and bottom row
-	(loop for i from m below (- w m 1) do
-	     (let ((j 0))
-	       (when (compare-expand 0 0 0
-				     1 1 1
-				     1 1 1)
-		 (push (list j i (aref im j i)) res)))
-	     (let ((j (1- h)))
-	       (when (compare-expand 1 1 1
-				     1 1 1
-				     0 0 0)
-		 (push (list j i (aref im j i)) res))))
-	(loop for j from m below (- h m 1) do
-	     (loop for i from m below (- w m 1) do
-		  (when (compare-expand 1 1 1
-					1 1 1
-					1 1 1)
-		    (push (list j i (aref im j i)) res))))
-	res))))
-#+nil
-(let ((ma (find-local-maxima (first *blur*))))
- (format t "~{~{~3d ~3d ~7,4f~%~}~}~% ( ~a )~%"
-	 (sort 
-	  ma
-	  #'> :key #'third)
-	 (length ma)))
-
 (defun mark-points (img ls &key (value .1))
   (let ((v (coerce value (array-element-type img))))
    (dolist (e ls)
      (destructuring-bind (j i amp) e
+       (declare (ignore amp))
        (setf (aref img j i) v))))
   img)
 

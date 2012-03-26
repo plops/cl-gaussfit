@@ -1,5 +1,5 @@
 (defpackage :fits-file
-  (:use #:cl)
+  (:use #:cl #:utils)
   (:export #:write-fits))
 
 (in-package :fits-file)

@@ -29,64 +29,74 @@
 ;; f_b  = 1
 ;; f_s  = - 2 arg/s ff
 
-(defvar *img* nil) 
+(defvar *imgs* nil) ;; 16bit 3d stack, note that values are divided by
+		    ;; 1000 before use
+
+(defvar *current-center* (list 0 0 0)) ;; integer position of the
+				       ;; current maximum
+(defvar *current-window-size* (list 5 5))
 
 (sb-alien::define-alien-callback fcn2
     void
-    ((m (* int)) ; = 8x8 or similar
-     (n (* int)) ; = 5
+    (;(m (* int)) ; = 8x8 or similar
+     ;(n (* int)) ; = 5
      (x (* double)) ; [xx,yy,a,b,sigma]
      (fvec (* double)) ; m
      (fjac (* double)) ; ldfjac,n
      (ldfjac (* int)) ; 1  ;; leading dimension of fjac
      (iflag (* int))) ; 1 1: fvec, 2: fjac
-  (destructuring-bind (h w) (array-dimensions *img*)
-    (let* ((xx (deref x 0))
-	   (yy (deref x 1))
-	   (a (deref x 2))
-	   (b (deref x 3))
-	   (s (deref x 4))) 
-      (ecase (deref iflag 0)
-	(1 (dotimes (j h)
-	     (dotimes (i w)
-	       (let* ((dx (- (* 1d0 i) xx))
-		      (dy (- (* 1d0 j) yy))
-		      (s2 (/ (* s s))) ;; I just realize that my
-				       ;; variable is not sigma:
-				       ;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
-		      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-		      (e (exp arg)) 
-		      (p (+ i (* w j))))
-		 (setf (deref fvec p)
-		       (+ (- (aref *img* j i)) b (* a e)))))))
-	(2 (let ((ww (deref ldfjac 0)))
-	     (macrolet ((f (a b)
-			  `(deref fjac (+ ,a (* ww ,b)))))
-	       (dotimes (j h)
-		 (dotimes (i w)
-		   ;; f_xx = 2 dx s2 f
-		   ;; f_yy = 2 dy s2 f
-		   ;; f_a  = e
-		   ;; f_b  = 1
-		   ;; f_s  = - 2 arg/s f	
-		   (let* ((dx (- (* 1d0 i) xx))
-			  (dy (- (* 1d0 j) yy))
-			  (s2 (/ (* s s)))
-			  (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-			  (e (exp arg))
-			  (f (* e a))
-			  (fxx (* 2 dx s2 f))
-			  (fyy (* 2 dy s2 f))
-			  (fa e)
-			  (fb 1d0)
-			  (fs (/ (* -2 arg f)
-				 s))
-			  (p (+ i (* w j)))) ;; i (width) is the fast index
-		     (setf (f p 0) fxx ;; the pixels are the fast index, the variables are slow
-			   (f p 1) fyy
-			   (f p 2) fa
-			   (f p 3) fb
-			   (f p 4) fs))))))))))  
+  (destructuring-bind (pz py px) *current-center*
+    (destructuring-bind (h w) *current-window-size*
+      (let* ((xx (deref x 0))
+	     (yy (deref x 1))
+	     (a (deref x 2))
+	     (b (deref x 3))
+	     (s (deref x 4))) 
+	(ecase (deref iflag 0)
+	  (1 (dotimes (j h)
+	       (dotimes (i w)
+		 (let* ((dx (- (* 1d0 i) xx))
+			(dy (- (* 1d0 j) yy))
+			(s2 (/ (* s s))) ;; I just realize that my
+			;; variable is not sigma:
+			;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
+			(arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+			(e (exp arg)) 
+			(p (+ i (* w j))))
+		   (setf (deref fvec p)
+			 (+ (* -.001 (aref *imgs*
+					   pz 
+					   (+ py j (- (floor h 2)))
+					   (+ px i (- (floor w 2))))) 
+			    b (* a e)))))))
+	  (2 (let ((ww (deref ldfjac 0)))
+	       (macrolet ((f (a b)
+			    `(deref fjac (+ ,a (* ww ,b)))))
+		 (dotimes (j h)
+		   (dotimes (i w)
+		     ;; f_xx = 2 dx s2 f
+		     ;; f_yy = 2 dy s2 f
+		     ;; f_a  = e
+		     ;; f_b  = 1
+		     ;; f_s  = - 2 arg/s f	
+		     (let* ((dx (- (* 1d0 i) xx))
+			    (dy (- (* 1d0 j) yy))
+			    (s2 (/ (* s s)))
+			    (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+			    (e (exp arg))
+			    (f (* e a))
+			    (fxx (* 2 dx s2 f))
+			    (fyy (* 2 dy s2 f))
+			    (fa e)
+			    (fb 1d0)
+			    (fs (/ (* -2 arg f)
+				   s))
+			    (p (+ i (* w j)))) ;; i (width) is the fast index
+		       (setf (f p 0) fxx ;; the pixels are the fast index, the variables are slow
+			     (f p 1) fyy
+			     (f p 2) fa
+			     (f p 3) fb
+			     (f p 4) fs)))))))))))  
   (values))
 
 
@@ -112,61 +122,66 @@
    (loop for i below (length ls) 
       sum (expt (elt ls i) 2))))
 
-(defun fit-gaussian (&key (x0 2) (y0 2) (a 1) (b 1) (sigma 1))
-  (destructuring-bind (h w) (array-dimensions *img*)
-   (let* ((m (* h w)) ;; pixels
-	  (n 5) ;; variables
-	  (x (make-array n :element-type 'double-float
-			 :initial-contents
-			 (mapcar #'(lambda (x) (* 1d0 x))
-				 (list x0 y0 a b sigma))))
-	  (ldfjac m)
-	  (lwa (+ m (* 5 n)))
-	  (wa (make-array lwa :element-type 'double-float
-			  :initial-element 0d0))
-	  (fvec (make-array m :element-type 'double-float
-			    :initial-element 0d0))
-	  (fjac (make-array (list n ldfjac) ;; pixels are fast index
-			    ;; in fortran this is m x n
-			    ;; F'_ij = \partial f_i/\partial x_j
-			    ;; 0<i<m, 0<j<n
-			    ;; columns (along j) store the gradient
-			    :element-type 'double-float
-			    :initial-element 0d0))
-	  (ipvt (make-array n
-			    :element-type '(signed-byte 32)
-			    :initial-element 0))
-	  (tol .01d0 #+nil (sqrt double-float-epsilon)))
-     (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
-       (labels ((a (ar)
-		  (sb-sys:vector-sap 
-		   (sb-ext:array-storage-vector
-		    ar))))
-	 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
-		  (a ipvt) (a wa) lwa)))
-     
-     (let ((fnorm (norm fvec))
-	   (fjnorm (make-array n :element-type 'double-float))
-	   (eps (* 9 .05)))
-       
-       ;; |x_i - x*_i| <= s_i    with x_j = x*_j for j/=i
-       ;; implies that:
-       ;; ||F(x)|| <= (1+eps) ||F(x*)||
-       ;; ||F'(x*) e_i|| = ||J e_i||
-       ;; ||J e_p(j)|| = ||R e_j||
+(defun fit-gaussian (&key (stack *imgs*) 
+		     (window-w 5) (window-h window-w)
+		     (center-x (floor window-w 2)) (center-y (floor window-h 2))
+		     (x0 2) (y0 2) (a 1) (b 1) (sigma 1))
+  (setf *imgs* stack)
+  (setf *current-center* (list center-y center-x))
+  (setf *current-window-size* (list window-h window-w))
+  (let* ((m (* window-h window-w)) ;; pixels
+	 (n 5) ;; variables
+	 (x (make-array n :element-type 'double-float
+			:initial-contents
+			(mapcar #'(lambda (x) (* 1d0 x))
+				(list x0 y0 a b sigma))))
+	 (ldfjac m)
+	 (lwa (+ m (* 5 n)))
+	 (wa (make-array lwa :element-type 'double-float
+			 :initial-element 0d0))
+	 (fvec (make-array m :element-type 'double-float
+			   :initial-element 0d0))
+	 (fjac (make-array (list n ldfjac) ;; pixels are fast index
+			   ;; in fortran this is m x n
+			   ;; F'_ij = \partial f_i/\partial x_j
+			   ;; 0<i<m, 0<j<n
+			   ;; columns (along j) store the gradient
+			   :element-type 'double-float
+			   :initial-element 0d0))
+	 (ipvt (make-array n
+			   :element-type '(signed-byte 32)
+			   :initial-element 0))
+	 (tol .01d0 #+nil (sqrt double-float-epsilon)))
+    (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
+      (labels ((a (ar)
+		 (sb-sys:vector-sap 
+		  (sb-ext:array-storage-vector
+		   ar))))
+	(lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
+		 (a ipvt) (a wa) lwa)))
+    
+    (let ((fnorm (norm fvec))
+	  (fjnorm (make-array n :element-type 'double-float))
+	  (eps (* 9 .05)))
+      
+      ;; |x_i - x*_i| <= s_i    with x_j = x*_j for j/=i
+      ;; implies that:
+      ;; ||F(x)|| <= (1+eps) ||F(x*)||
+      ;; ||F'(x*) e_i|| = ||J e_i||
+      ;; ||J e_p(j)|| = ||R e_j||
       (dotimes (j n)
-	 (let ((l (- (aref ipvt j) 1)))
-	   ;; fjac contains upper triangular matrix R
-	   (setf (aref fjnorm l) 
-		 (norm (loop for i upto j
-			  collect (aref fjac j i))))))
+	(let ((l (- (aref ipvt j) 1)))
+	  ;; fjac contains upper triangular matrix R
+	  (setf (aref fjnorm l) 
+		(norm (loop for i upto j
+			 collect (aref fjac j i))))))
       (values x
 	      (loop for i below n collect
 		   (unless (< (abs (aref fjnorm i)) double-float-epsilon)
-		    (* (sqrt eps)
-		       (/ fnorm
-			  (aref fjnorm i)))))
-	      fnorm)))))
+		     (* (sqrt eps)
+			(/ fnorm
+			   (aref fjnorm i)))))
+	      fnorm))))
 
 
 ;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
