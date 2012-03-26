@@ -71,24 +71,19 @@
 #+nil
 (time
  (let ((start 0)
-       (n 100)
-       (damp (make-array (list 64 64) :element-type 'single-float)))
-   (loop for j from 10 below (- 64 10) do
-     (loop for i from 10 below (- 64 10) do
-	  (setf (aref damp j i) 1f0)))
-   (blur-float damp 5f0 5f0 .02)
+       (n 1000))
    (defparameter *blur*
      (loop for k from start below (+ start n) collect
-	  (let* ((s 1.3)
-		 (s2 1.5)
+	  (let* ((s (/ .5 (sqrt 2)))
+		 (s2 (* 1.2 s))
 		 (im (ub16->single-2
 		      (extract-frame *imgs* k)))
-		 (g1 (blur-float im s s 1e-5))
-		 (g2 (blur-float (copy-img im) s2 s2 1e-5))
-		 (dog (img-op #'* damp (img-op #'- g1 g2)
-		       )))
+		 (g1 (blur-float im s s 1e-3))
+		 (g2 (blur-float (copy-img im) s2 s2 1e-3))
+		 (dog (img-op #'- g1 g2)))
 	    (when (= 0 (mod k 100))
-	      (format t "~a~%" (list 'at k 'until (+ start n))))
+	      (format t "~a~%" 
+		      (list 'at k 'until (+ start n))))
 	    dog
 	    #+nil (mark-points dog (find-local-maxima dog)))))
    (write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
