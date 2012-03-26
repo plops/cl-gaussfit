@@ -1,7 +1,9 @@
 (defpackage :gauss-fit
-  (:use #:cl)
+  (:use #:cl #:sb-alien)
   (:export #:fit-gaussian
-	   #:print-with-error1))
+	   #:print-with-error))
+
+(in-package :gauss-fit)
 
 ;; ANL8074a.pdf documentation for minpack
 
@@ -30,8 +32,10 @@
 ;; f_b  = 1
 ;; f_s  = - 2 arg/s ff
 
-(defvar *imgs* nil) ;; 16bit 3d stack, note that values are divided by
-		    ;; 1000 before use
+(defvar *imgs* (make-array (list 1 1 1) :element-type '(unsigned-byte 16)))
+;; 16bit 3d stack, note that values are divided by
+;; 1000 before use
+(declaim (type (array (unsigned-byte 16) 3) *imgs*))
 
 (defvar *current-center* (list 0 0 0)) ;; integer position of the
 				       ;; current maximum
@@ -39,8 +43,8 @@
 
 (sb-alien::define-alien-callback fcn2
     void
-    (;(m (* int)) ; = 8x8 or similar
-     ;(n (* int)) ; = 5
+    ((m (* int)) ; = 8x8 or similar
+     (n (* int)) ; = 5
      (x (* double)) ; [xx,yy,a,b,sigma]
      (fvec (* double)) ; m
      (fjac (* double)) ; ldfjac,n
@@ -126,9 +130,14 @@
 (defun fit-gaussian (&key (stack *imgs*) 
 		     (window-w 5) (window-h window-w)
 		     (center-x (floor window-w 2)) (center-y (floor window-h 2))
-		     (x0 2) (y0 2) (a 1) (b 1) (sigma 1))
+		     (center-slice 0)
+		     (x0 2d0) (y0 2d0) (a 1d0) (b .45d0) (sigma .8d0))
+  (declare (type (integer 1) window-w window-h)
+	   (type (integer 0) center-slice))
+  (unless (<= 0 center-slice (array-dimension *imgs* 0))
+    (error "stack has not enough slices for center-slice=~d" center-slice))
   (setf *imgs* stack)
-  (setf *current-center* (list center-y center-x))
+  (setf *current-center* (list center-slice center-y center-x))
   (setf *current-window-size* (list window-h window-w))
   (let* ((m (* window-h window-w)) ;; pixels
 	 (n 5) ;; variables
@@ -158,8 +167,10 @@
 		 (sb-sys:vector-sap 
 		  (sb-ext:array-storage-vector
 		   ar))))
-	(lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
-		 (a ipvt) (a wa) lwa)))
+	(format t "lmder1 ~a~%"
+		(multiple-value-list 
+		 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
+			  (a ipvt) (a wa) lwa)))))
     
     (let ((fnorm (norm fvec))
 	  (fjnorm (make-array n :element-type 'double-float))

@@ -1,6 +1,7 @@
 #+nil
 (progn
-  (loop for i in '("utils" "gauss-fit" "gauss-blur" "fits-file" "statistics")
+  (loop for i in '("utils" "gauss-fit" "gauss-blur"
+		   "fits-file" "statistics")
        do
        (load (format nil "~a.lisp" i))))
 
@@ -41,37 +42,10 @@
 			     (* 256 (ldb (byte 8 0) (aref a i))))))
       b)))
 
-
-(defun find-max (stack)
-  (declare (type (simple-array (unsigned-byte 16) 3) stack))
-  (let* ((ma 0)
-	 (a1 (array-storage-vector stack))
-	 (n (length a1)))
-    (declare (type (unsigned-byte 16) ma))
-   (dotimes (i n)
-     (setf ma (max ma (aref a1 i))))
-   ma))
-
-#+nil
-(time (find-max *imgs*))
-
-(write-fits "/dev/shm/o.fits"
-	    (ub16->single-2
-			  (extract-frame *imgs* 1))
-	    #+nil
-	    (img-op #'-
-	     (blur-float (ub16->single-2
-			  (extract-frame *imgs* 1))
-			 1.3 1.3 1e-1)
-
-	     (blur-float (ub16->single-2
-			  (extract-frame *imgs* 1))
-			 1.5 1.5 1e-1)))
-
 #+nil
 (time
  (let ((start 0)
-       (n 2000))
+       (n 20))
    (defparameter *blur*
      (loop for k from start below (+ start n) collect
 	  (let* ((s 1.2)
@@ -94,15 +68,16 @@
 				:displaced-to 
 				(subseq (make-displaced-array *imgs*)
 					0 (* n w h)))))
-	 (write-fits "/dev/shm/raw.fits" part))))))
+	 (write-fits "/dev/shm/raw.fits" part)
+	 (defparameter *imgs-part* part))))))
 
 
 
 
-;; find histogram and statistics of difference of gaussian images
+
 #+nil
 (time
- (progn
+ (progn ;; find histogram and statistics of difference of gaussian images
    (defparameter *dog-mean* 0)
    (defparameter *dog-stddev* 0)
    (multiple-value-setq (*dog-mean*
@@ -110,28 +85,29 @@
      (get-statistics *blur*))))
 
 #+nil
-(time ;; histogram of difference of gaussian filtered images
- (destructuring-bind (h w) (array-dimensions (first *blur*))
-   (let* ((ma (loop for e in *blur* maximize
-		   (reduce #'max (make-displaced-array e))))
-	  (mi (loop for e in *blur* minimize
-		   (reduce #'min (make-displaced-array e))))
-	  (mp (* 1.1 (max ma (abs mi))))
-	  (n 600)
-	  (hist (make-array n :element-type 'fixnum))
-	  ee q)
-     (loop for e in *blur* do
-	  (multiple-value-setq (ee q)
-	    (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
-     (with-open-file (s "/dev/shm/dog-all.dat" :direction :output
-			:if-exists :supersede
-			:if-does-not-exist :create)
-      (format s "~{~{~f ~f~%~}~} # mean = ~f stddev = ~f~%"
-	      (loop for i across hist and g in q 
-		 collect (list g 
-			       (if (= 0 i) 0 i)))
-	      *dog-mean*
-	      *dog-stddev*)))))
+(time 
+ (progn ;; histogram of difference of gaussian filtered images
+   (destructuring-bind (h w) (array-dimensions (first *blur*))
+    (let* ((ma (loop for e in *blur* maximize
+		    (reduce #'max (make-displaced-array e))))
+	   (mi (loop for e in *blur* minimize
+		    (reduce #'min (make-displaced-array e))))
+	   (mp (* 1.1 (max ma (abs mi))))
+	   (n 600)
+	   (hist (make-array n :element-type 'fixnum))
+	   ee q)
+      (loop for e in *blur* do
+	   (multiple-value-setq (ee q)
+	     (calc-hist e :n n :minv (* 1.1 mi) :maxv (* 1.1 ma) :append hist)))
+      (with-open-file (s "/dev/shm/dog-all.dat" :direction :output
+			 :if-exists :supersede
+			 :if-does-not-exist :create)
+	(format s "~{~{~f ~f~%~}~} # mean = ~f stddev = ~f~%"
+		(loop for i across hist and g in q 
+		   collect (list g 
+				 (if (= 0 i) 0 i)))
+		*dog-mean*
+		*dog-stddev*))))))
 
 
 #+nil
@@ -233,73 +209,85 @@ pause -1
     (setf *blur-big-ma-2* (reverse *blur-big-ma-2*))
     (write-fits "/dev/shm/blur-ma-2.fits" (img-list->stack *blur-ma-2*))))
 
+(defun centroid (k j i)
+  (let* ((n 2)
+	 (x 0)
+	 (y 0)
+	 (count 0)
+	 (bg 490))
+    (loop for jj from (- n) upto n do
+	 (loop for ii from (- n) upto n do
+	      (let ((g (- (aref *imgs-part* 
+				k (+ jj j) (+ ii i))
+			  bg)))
+	       (incf count)
+	       (incf x (* ii g))
+	       (incf y (* jj g)))))
+    (values (/ y count)
+	    (/ x count))))
+
 #+nil
 (time 
  (progn ;; run the fit on a few images (100 takes 160 seconds)
    (defparameter *all-fits* nil)
-   (loop for k from 0 below (length *raw*) do
-	(progn
-	  (progn ;; extract areas around peaks in an image
-	    (defparameter *current-image* k)
-	    (format t "~d~%" k)
-	    (defparameter *raw-blobs*
-	      (let ((im (elt *raw* *current-image*)))
-		(loop for e in (elt *blur-big-ma-2* *current-image*) collect
-		     (destructuring-bind (j i val) e
-		       (extract im j i :n 5)))))
-	  #+nil  (write-fits "/dev/shm/raw-blobs.fits"
-			(img-list->stack (remove-if #'null *raw-blobs*))))
+   (let ((n 5))
+    (destructuring-bind (z h w) (array-dimensions *imgs-part*)
+      (loop for k from 0 below 1 do
+	   (progn
 
-	  (progn ;; run gauss fits on the extracted images
-	    (defparameter
-		*fits*
-	      (loop for e in *raw-blobs* and point in
-		   (elt *blur-big-ma-2* *current-image*) collect
-		   (when e
-		     (setf *img* (img-mul e .001))
-		     (destructuring-bind (h w) (array-dimensions e)
-		       (destructuring-bind (j i val) point
-			 (multiple-value-bind (x err fnorm)
-			     (fit-gaussian :x0 (floor w 2) :y0 (floor h 2)
-					   :a 1 :b .49 :sigma .8)
-			   (list
-			    fnorm val
-			    (loop for e across x and r in err collect
-				 (list e r)))))))))
-	    #+nil(loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
-		 (format t "~3d ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
-			 num fnorm val x+err))
+	     (progn ;; run gauss fits on the extracted images
+	       (defparameter
+		   *fits*
+		 (loop for point in (elt *blur-big-ma-2* k) collect
+		      (destructuring-bind (j i val) point
+			(when (and (< 2 i (- w 2 1))
+				   (< 2 j (- h 2 1)))
+			  (multiple-value-bind (x err fnorm)
+			      (fit-gaussian 
+			       :stack *imgs-part*
+			       :window-w n
+			       :center-x i :center-y j
+			       :center-slice k
+			       :x0 (floor n 2) :y0 (floor n 2)
+			       :a 1 :b .49 :sigma .8)
+			    (list
+			     fnorm val
+			     (loop for e across x and r in err collect
+				  (list e r))))))))
+	       #+nil(loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
+			 (format t "~3d ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+				 num fnorm val x+err))
 	    
-	    (setf *all-fits* (append *all-fits* (list *fits*))))
+	       (setf *all-fits* (append *all-fits* (list *fits*))))
 	  
-	  #+nil
-	  (progn ;; generate images of the fitted functions
-	    (defparameter *fit-calc*
-	      (loop for e in *fits* collect
-		   (when e
-		     (destructuring-bind (fnorm val x+err) e
-		       (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-			 (let* ((n 5) 
-				(ar (make-array (list n n) :element-type 'single-float)))
-			   (dotimes (j n)
-			     (dotimes (i n)
-			       (setf (aref ar j i) (coerce (g i j x y a b s)
-							   'single-float))))
-			   ar))))))
-	    (let ((a (make-array (array-dimensions (first *raw*))
-				 :element-type 'single-float
-				 :initial-element .49)))
-	      (loop for f in *fit-calc* and pos in (elt *blur-big-ma-2* *current-image*) do
-		   (when f
-		     (destructuring-bind (j i val) pos
-		       (insert a f j i))))
-	      (write-fits "/dev/shm/fit-calc.fits" 
-			  (img-list->stack
-			   (let ((orig (img-mul (elt *raw* *current-image*)
-						.001)))
-			     (list a
-				   orig
-				   (img-op #'- orig a)))))))))))
+	     #+nil
+	     (progn ;; generate images of the fitted functions
+	       (defparameter *fit-calc*
+		 (loop for e in *fits* collect
+		      (when e
+			(destructuring-bind (fnorm val x+err) e
+			  (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+			    (let* ((n 5) 
+				   (ar (make-array (list n n) :element-type 'single-float)))
+			      (dotimes (j n)
+				(dotimes (i n)
+				  (setf (aref ar j i) (coerce (g i j x y a b s)
+							      'single-float))))
+			      ar))))))
+	       (let ((a (make-array (array-dimensions (first *raw*))
+				    :element-type 'single-float
+				    :initial-element .49)))
+		 (loop for f in *fit-calc* and pos in (elt *blur-big-ma-2* *current-image*) do
+		      (when f
+			(destructuring-bind (j i val) pos
+			  (insert-rectangle a f j i))))
+		 (write-fits "/dev/shm/fit-calc.fits" 
+			     (img-list->stack
+			      (let ((orig (img-mul (elt *raw* *current-image*)
+						   .001)))
+				(list a
+				      orig
+				      (img-op #'- orig a)))))))))))))
 
 #+nil
 (progn ;; create high res image
