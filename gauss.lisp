@@ -209,9 +209,8 @@ pause -1
     (setf *blur-big-ma-2* (reverse *blur-big-ma-2*))
     (write-fits "/dev/shm/blur-ma-2.fits" (img-list->stack *blur-ma-2*))))
 
-(defun centroid (k j i)
-  (let* ((n 2)
-	 (x 0)
+(defun centroid (k j i &optional (n 2))
+  (let* ((x 0)
 	 (y 0)
 	 (count 0)
 	 (bg 490))
@@ -220,11 +219,11 @@ pause -1
 	      (let ((g (- (aref *imgs-part* 
 				k (+ jj j) (+ ii i))
 			  bg)))
-	       (incf count)
+	       (incf count g)
 	       (incf x (* ii g))
 	       (incf y (* jj g)))))
-    (values (/ y count)
-	    (/ x count))))
+    (let ((s (/ 1d0 count)))
+      (values (* s y) (* s x)))))
 
 #+nil
 (time 
@@ -232,7 +231,7 @@ pause -1
    (defparameter *all-fits* nil)
    (let ((n 5))
     (destructuring-bind (z h w) (array-dimensions *imgs-part*)
-      (loop for k from 0 below 1 do
+      (loop for k from 0 below z do
 	   (progn
 
 	     (progn ;; run gauss fits on the extracted images
@@ -251,12 +250,17 @@ pause -1
 			       :x0 (floor n 2) :y0 (floor n 2)
 			       :a 1 :b .49 :sigma .8)
 			    (list
-			     fnorm val
+			     fnorm val (list i j)
 			     (loop for e across x and r in err collect
 				  (list e r))))))))
-	       #+nil(loop for num from 0 and (fnorm val x+err) in (remove-if #'null *fits*) do
-			 (format t "~3d ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
-				 num fnorm val x+err))
+	       (loop for num from 0 and (fnorm val (i j) x+err) in
+		    (remove-if #'null *fits*) do
+		    (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+		     (multiple-value-bind (cy cx) (centroid k j i)
+		       (format t "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+			       num i (+ i cx) 
+			       (+ i dx) j (+ j cy) (+ j dy)
+			       fnorm val x+err))))
 	    
 	       (setf *all-fits* (append *all-fits* (list *fits*))))
 	  

@@ -41,6 +41,8 @@
 				       ;; current maximum
 (defvar *current-window-size* (list 5 5))
 
+(declaim (optimize (speed 3)))
+
 (sb-alien::define-alien-callback fcn2
     void
     ((m (* int)) ; = 8x8 or similar
@@ -51,30 +53,34 @@
      (ldfjac (* int)) ; 1  ;; leading dimension of fjac
      (iflag (* int))) ; 1 1: fvec, 2: fjac
   (destructuring-bind (pz py px) *current-center*
+    (declare (type (integer 0 16000) px py pz))
     (destructuring-bind (h w) *current-window-size*
+      (declare (type (integer 1 16000) h w))
       (let* ((xx (deref x 0))
 	     (yy (deref x 1))
 	     (a (deref x 2))
 	     (b (deref x 3))
 	     (s (deref x 4))) 
+	(declare (type double-float xx yy a b s))
 	(ecase (deref iflag 0)
 	  (1 (dotimes (j h)
-	       (dotimes (i w)
-		 (let* ((dx (- (* 1d0 i) xx))
-			(dy (- (* 1d0 j) yy))
-			(s2 (/ (* s s))) ;; I just realize that my
-			;; variable is not sigma:
-			;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
-			(arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-			(e (exp arg)) 
-			(p (+ i (* w j))))
-		   (setf (deref fvec p)
-			 (+ (* -.001 (aref *imgs*
-					   pz 
-					   (+ py j (- (floor h 2)))
-					   (+ px i (- (floor w 2))))) 
+		  (dotimes (i w)
+		       (let* ((dx (- (* 1d0 i) xx))
+			      (dy (- (* 1d0 j) yy))
+			      (s2 (/ (* s s))) ;; I just realize that my
+			      ;; variable is not sigma:
+			      ;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
+			      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+			      (e (exp arg)) 
+			      (p (+ i (* w j))))
+			 (setf (deref fvec p)
+			       (+ (* -.001 (aref *imgs*
+						 pz 
+						 (+ py j (- (floor h 2)))
+						 (+ px i (- (floor w 2))))) 
 			    b (* a e)))))))
 	  (2 (let ((ww (deref ldfjac 0)))
+	       (declare (type (signed-byte 32) ww))
 	       (macrolet ((f (a b)
 			    `(deref fjac (+ ,a (* ww ,b)))))
 		 (dotimes (j h)
@@ -97,6 +103,9 @@
 			    (fs (/ (* -2 arg f)
 				   s))
 			    (p (+ i (* w j)))) ;; i (width) is the fast index
+		       (declare (type double-float dx dy s2 arg e f
+				      fxx fyy fa fb fs)
+				(type fixnum p))
 		       (setf (f p 0) fxx ;; the pixels are the fast index, the variables are slow
 			     (f p 1) fyy
 			     (f p 2) fa
@@ -167,10 +176,13 @@
 		 (sb-sys:vector-sap 
 		  (sb-ext:array-storage-vector
 		   ar))))
-	(format t "lmder1 ~a~%"
-		(multiple-value-list 
-		 (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
-			  (a ipvt) (a wa) lwa)))))
+
+	(multiple-value-bind (ign info)
+	  (lmder1_ (alien-sap fcn2) m n (a x) (a fvec) (a fjac) ldfjac tol
+		   (a ipvt) (a wa) lwa)
+	  (declare (ignore ign))
+	  (unless (<= 1 info 3)
+	    (format t "lmder returned info=~d" info)))))
     
     (let ((fnorm (norm fvec))
 	  (fjnorm (make-array n :element-type 'double-float))
