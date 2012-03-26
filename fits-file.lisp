@@ -25,6 +25,8 @@
 ;; offset in example file #x1680 = 5760 = 2*2880
 
 (defun generate-fits-header (img &key (bits 16))
+  (unless bits
+    (error "bits isn't set correctly"))
   (let* ((dims (array-dimensions img))
 	 (dat `((SIMPLE T)
 		(BITPIX ,bits)
@@ -52,33 +54,44 @@
  (generate-fits-header (first *blur*) :bits 16))
 
 (defun write-fits (filename img)
-  (let ((head (generate-fits-header img
-				    :bits (cond
-					    ((eq (array-element-type img) 'single-float) -32)
-					    ((or
-					      (eq (array-element-type img) '(unsigned-byte 16))
-					      (eq (array-element-type img) '(signed-byte 16))) 16)))))
+  (let ((head 
+	 (generate-fits-header 
+	  img
+	  :bits (cond
+		  ((equal (array-element-type img) 'single-float) 
+		   -32)
+		  ((or
+		    (equal (array-element-type img) '(unsigned-byte 16))
+		    (equal (array-element-type img) '(signed-byte 16)))
+		   16)))))
     (with-open-file (s filename
 		       :direction :output
 		       :if-exists :supersede
 		       :if-does-not-exist :create)
       (write-sequence head s))
-    (let* ((i1 (array-displacement (copy-img img)))
-	   (sap (sb-sys:vector-sap i1))
-	   (n (array-total-size img))
+        (let* ((i1 (array-displacement (copy-img img)))
+		    (sap (sb-sys:vector-sap i1))
+		    (n (cond
+		  ((equal (array-element-type img) 'single-float) 
+		   (array-total-size img))
+		  ((or
+		    (equal (array-element-type img) '(unsigned-byte 16))
+		    (equal (array-element-type img) '(signed-byte 16)))
+		   (floor (array-total-size img)
+			  2))))
 	   (h1 (make-array n :element-type '(unsigned-byte 32)))
 	   (h2 (make-array n :element-type '(unsigned-byte 32))))
       (dotimes (i n)
 	(setf (aref h1 i) (sb-sys:sap-ref-32 sap (* 4 i))))
       (cond ;; swap endian
-	((eq (array-element-type img) 'single-float)
+	((equal (array-element-type img) 'single-float)
 	 (dotimes (i n) 
 	   (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 24) (aref h1 i))
 		 (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 16) (aref h1 i))
 		 (ldb (byte 8 16) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
 		 (ldb (byte 8 24) (aref h2 i)) (ldb (byte 8 0) (aref h1 i)))))
-	((or (eq (array-element-type img) '(unsigned-byte 16))
-	     (eq (array-element-type img) '(signed-byte 16)))
+	((or (equal (array-element-type img) '(unsigned-byte 16))
+	     (equal (array-element-type img) '(signed-byte 16)))
 	 (dotimes (i n) 
 	   (setf (ldb (byte 8 0) (aref h2 i)) (ldb (byte 8 8) (aref h1 i))
 		 (ldb (byte 8 8) (aref h2 i)) (ldb (byte 8 0) (aref h1 i))

@@ -1,6 +1,7 @@
 (defpackage :gauss-fit
   (:use #:cl)
-  (:export #:fit-gaussian))
+  (:export #:fit-gaussian
+	   #:print-with-error1))
 
 ;; ANL8074a.pdf documentation for minpack
 
@@ -185,3 +186,19 @@
 
 
 ;; p.18 the i-th row of the jacobian is the gradient of the i-th residual
+
+
+;; print 2 digits of the sigma sx and the same for the value x
+;; if sx>1 print all digits
+(defun print-with-error (x sx)
+ (let* ((sigma-digits (- (floor (log sx 10))))
+	(n (if (<= sigma-digits 0) 
+	       0 ;; if sigma > 1 
+	       (1+ sigma-digits))))
+   (if (<= sigma-digits 0)
+       (format nil "~4d ~4d" (floor x) (floor sx))
+       (format nil (format nil "~~5,~df ~~5,~df" n n) x sx))))
+
+#+nil
+(print-with-error 2.2442 0.13)
+

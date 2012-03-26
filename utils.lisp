@@ -5,7 +5,11 @@
 	   #:extract-frame
 	   #:img-op
 	   #:img-apply-mask
-	   #:find-local-maxima))
+	   #:find-local-maxima
+	   #:draw-points-into-mask
+	   #:extract-square
+	   #:insert-rectangle
+	   #:img-mul))
 
 (in-package :utils)
 
@@ -53,6 +57,36 @@
     (dotimes (i (length a1))
       (setf (aref c1 i) (* 1s0 (funcall op (aref a1 i) (aref b1 i)))))
     c))
+
+
+(defun img-mul (im &optional (factor .001d0))
+  (let* ((a (make-array (array-dimensions im)
+			:element-type (array-element-type im)))
+	 (i1 (make-displaced-array im))
+	 (a1 (make-displaced-array a)))
+    (dotimes (i (length a1))
+      (setf (aref a1 i) (* factor (aref i1 i))))
+    a))
+
+(defun draw-points-into-mask (img points &key (mask-border 0))
+  (destructuring-bind (h w) (array-dimensions img)
+   (let ((a (make-array (array-dimensions img)
+			:element-type 'boolean
+			:initial-element nil)))
+     (loop for j from mask-border below (- h mask-border) do
+	  (loop for i from mask-border below (- w mask-border) do
+	       (setf (aref a j i) t)))
+     (dolist (p points)
+       (destructuring-bind (y x val) p
+	 (declare (ignore val))
+	 (loop for j from -5 upto 5 do
+	   (loop for i from -5 upto 5 do
+		(let ((xx (+ x i))
+		      (yy (+ y j)))
+		  (when (and (<= 0 xx (1- w))
+			     (<= 0 yy (1- h)))
+		    (setf (aref a yy xx) nil)))))))
+     a)))
 
 (defun img-apply-mask (img mask &key (background 0))
   (unless (= (array-total-size img)
@@ -142,3 +176,37 @@
 					1 1 1)
 		    (push (list j i (aref im j i)) res))))
 	res))))
+
+;; example for 5px neighbourhood
+;; 0 0 0 0 0
+;; 0 0 0 0 0 
+;; 0 0 x 0 0 
+;; 0 0 0 0 0 
+;; 0 0 0 0 0
+;; (floor 5 2) = 2
+(defun extract-square (img y x &key (n 9))
+  (destructuring-bind (h w) (array-dimensions img)
+    (let* ((a (make-array (list n n)
+			  :element-type (array-element-type img)))
+	   (offset (floor n 2)))
+      ;; make sure that image contains full neighbourhood
+      (when (and (<= offset x (- w offset 1)) 
+		 (<= offset y (- h offset 1)))
+	(dotimes (j n)
+	  (dotimes (i n)
+	    (setf (aref a j i)
+		  (aref img
+			(+ y j (- offset))
+			(+ x i (- offset))))))
+	a))))
+
+(defun insert-rectangle (img kern y x)
+  (destructuring-bind (hh ww) (array-dimensions kern)
+    (let ((oh (floor hh 2))
+	  (ow (floor ww 2)))
+     (dotimes (j hh)
+       (dotimes (i ww)
+	 (setf (aref img (+ y (- j oh)) (+ x (- i ow)))
+	       (aref kern j i)))))))
+
+
