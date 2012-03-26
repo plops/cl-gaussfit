@@ -1,3 +1,9 @@
+#+nil
+(progn
+  (loop for i in '("utils" "gauss-fit" "gauss-blur" "fits-file" "statistics")
+       do
+       (load (format nil "~a.lisp" i))))
+
 (defpackage :gauss
   (:use :cl :utils :gauss-fit 
 	:gauss-blur :fits-file
@@ -49,32 +55,43 @@
 #+nil
 (time (find-max *imgs*))
 
+(write-fits "/dev/shm/o.fits"
+	    (ub16->single-2
+			  (extract-frame *imgs* 1))
+	    #+nil
+	    (img-op #'-
+	     (blur-float (ub16->single-2
+			  (extract-frame *imgs* 1))
+			 1.3 1.3 1e-1)
+
+	     (blur-float (ub16->single-2
+			  (extract-frame *imgs* 1))
+			 1.5 1.5 1e-1)))
+
 #+nil
 (time
  (let ((start 0)
-       (n 10000))
-   (defparameter *raw*
-     (loop for k from start upto (+ start n) collect
-	  (ub16->single-2 (extract-frame *imgs* k))))
+       (n 100)
+       (damp (make-array (list 64 64) :element-type 'single-float)))
+   (loop for j from 10 below (- 64 10) do
+     (loop for i from 10 below (- 64 10) do
+	  (setf (aref damp j i) 1f0)))
+   (blur-float damp 5f0 5f0 .02)
    (defparameter *blur*
-     (let ((imgs nil))
-       (loop for k from start upto (+ start n) collect
-	    (let* ((s 1.3)
-		   (s2 1.5)
-		   (dog (img-op #'-
-				(blur-float
-				 (ub16->single-2
-				  (extract-frame *imgs* k))
-				 s s 1e-4)
-				(blur-float
-				 (ub16->single-2
-				  (extract-frame *imgs* k)) 
-				 s2 s2 1e-4))))
-	      (when (= 0 (mod k 100))
-		(format t "~a~%" (list 'at k 'until (+ start n))))
-	      dog
-	      #+nil (mark-points dog (find-local-maxima dog))))))
-   #+nil(write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
+     (loop for k from start below (+ start n) collect
+	  (let* ((s 1.3)
+		 (s2 1.5)
+		 (im (ub16->single-2
+		      (extract-frame *imgs* k)))
+		 (g1 (blur-float im s s 1e-5))
+		 (g2 (blur-float (copy-img im) s2 s2 1e-5))
+		 (dog (img-op #'* damp (img-op #'- g1 g2)
+		       )))
+	    (when (= 0 (mod k 100))
+	      (format t "~a~%" (list 'at k 'until (+ start n))))
+	    dog
+	    #+nil (mark-points dog (find-local-maxima dog)))))
+   (write-fits "/dev/shm/o.fits" (img-list->stack *blur*))))
 
 
 ;; find histogram and statistics of difference of gaussian images
@@ -115,7 +132,7 @@
     (defparameter *blur-ma*
       (loop for e in *blur* collect
 	   (let* ((c (copy-img e))
-		  (ma (find-local-maxima c))
+ 		  (ma (find-local-maxima c))
 		  (big-ma (remove-if #'(lambda (e) 
 					 (< (third e)
 					    (+ *dog-mean* 
