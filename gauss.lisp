@@ -1,12 +1,3 @@
-;; ANL8074a.pdf documentation for minpack
-
-;; how to do fitting on the gpu (they consider poisson noise but it
-;; doesn't seem to improve precision, their method is very fast but
-;; they don't give code)
-;; /home/martin/ondrej-papers/papers/Quan2010OSA.pdf
-
-;; fitting precision 2004 ober
-;;  /home/martin/ondrej-papers/papers/sdarticle\ \(3\).pdf
 
 (defvar *rand* .9)
 

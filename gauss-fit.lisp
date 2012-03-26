@@ -2,6 +2,18 @@
   (:use #:cl)
   (:export #:fit-gaussian))
 
+;; ANL8074a.pdf documentation for minpack
+
+;; note that minpack isn't thread safe
+
+;; how to do fitting on the gpu (they consider poisson noise but it
+;; doesn't seem to improve precision, their method is very fast but
+;; they don't give code)
+;; /home/martin/ondrej-papers/papers/Quan2010OSA.pdf
+
+;; fitting precision 2004 ober
+;;  /home/martin/ondrej-papers/papers/sdarticle\ \(3\).pdf
+
 
 ;; jacobian([b+a*exp(-((x-xx)^2+(y-yy)^2)/sigma^2)-f],[xx,yy,a,b,sigma]);
 ;; dx = x-xx
@@ -17,7 +29,7 @@
 ;; f_b  = 1
 ;; f_s  = - 2 arg/s ff
 
-(defvar *img* nil)
+(defvar *img* nil) 
 
 (sb-alien::define-alien-callback fcn2
     void
@@ -34,8 +46,6 @@
 	   (a (deref x 2))
 	   (b (deref x 3))
 	   (s (deref x 4))) 
-      #+nil (format t "bla ~a ~%" (list (deref iflag 0)
-				  (loop for i below 5 collect (deref x i))))
       (ecase (deref iflag 0)
 	(1 (dotimes (j h)
 	     (dotimes (i w)
@@ -126,7 +136,7 @@
 	  (ipvt (make-array n
 			    :element-type '(signed-byte 32)
 			    :initial-element 0))
-	  (tol .001d0 #+nil (sqrt double-float-epsilon)))
+	  (tol .01d0 #+nil (sqrt double-float-epsilon)))
      (sb-sys:with-pinned-objects (x wa fvec fjac ipvt)
        (labels ((a (ar)
 		  (sb-sys:vector-sap 

@@ -119,7 +119,6 @@ accuracy .. 1e-3 to 1e-4 for 16bit images. smaller is better"
     (let* ((sum/ (/ 1s0 (+ (aref a 0 0)
 			(* 2 (loop for i from 1 below n sum (aref a 0 i))))))
 	   (rsum (+ .5 (* .5 sum/ (aref a 0 0)))))
-      (defparameter *rsum* (list 'sum (/ s) 'rsum rsum))
       (loop for i below n do
 	   (let ((v (* sum/ (aref a 0 i))))
 	    (setf (aref a 0 i) v)
