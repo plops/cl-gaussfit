@@ -239,7 +239,7 @@ pause -1
 
 #+nil
 (progn ;; store data for later use
-  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro3.lisp"
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro4.lisp"
 		     :direction :output
 		     :if-exists :supersede
 		     :if-does-not-exist :create
@@ -403,18 +403,19 @@ pause -1
       (length point-a))))
 
 #+nil
-(progn ;; 23s ;; find nearest neighbour distances
-  (let* ((n (length *point-a*))
-	 (dists (make-array n :element-type 'single-float)))
-    (dotimes (i n)
-      (multiple-value-bind (p d)
-	  (nearest-neighbour i *tree*)
-	(setf (aref dists i) d)))
-    (defparameter *dists* dists)))
+(time
+ (progn ;; 58s ;; find nearest neighbour distances
+   (let* ((n (length *point-a*))
+	  (dists (make-array n :element-type 'single-float)))
+     (dotimes (i n)
+       (multiple-value-bind (p d)
+	   (nearest-neighbour i *tree*)
+	 (setf (aref dists i) d)))
+     (defparameter *dists* dists))))
  
 #+nil
 (progn ;; create histogram of nearest neighbour distances 
-  (let* ((n 4000)
+  (let* ((n 400)
 	 (hist (make-array n :element-type '(unsigned-byte 64)))
 	 (ma (reduce #'max *dists*)))
     (loop for d across *dists* do
