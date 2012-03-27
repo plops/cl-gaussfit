@@ -237,16 +237,20 @@ pause -1
      (values 0d0 0d0))))
 
 #+nil
-(dotimes (i 100)
-  (sleep 1000)
-  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro.lisp"
+(progn ;; store data for later use
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro2.lisp"
 		     :direction :output
 		     :if-exists :supersede
 		     :if-does-not-exist :create
 		     )
-    (write (list *dog-mean-2* *dog-stddev-2* *blur-big-ma-2*
-		 *all-fits*) :stream s))
+    (write `(progn (defparameter *1dog-mean-2* ,*dog-mean-2*) 
+		   (defparameter *1dog-stddev-2* ,*dog-stddev-2*)
+		   (defparameter *1blur-big-ma-2* ',*blur-big-ma-2*)
+		   (defparameter *1all-fits* ',*all-fits*)) :stream s))
   nil)
+
+#+nil
+(load "/home/martin/0316/cl-gaussfit/store-centro2.lisp")
 
 #+nil
 (length *all-fits*)
@@ -259,7 +263,6 @@ pause -1
     (destructuring-bind (z h w) (array-dimensions *imgs-part*)
       (loop for k from 0 below z do
 	   (progn
-
 	     (progn ;; run gauss fits on the extracted images
 	       (defparameter
 		   *fits*
@@ -309,7 +312,7 @@ pause -1
 
 		 (loop for e in *fits* collect
 		      (when e
-			(destructuring-bind (fnorm val x+err) e
+			(destructuring-bind (fnorm val (ii jj) x+err) e
 			  (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
 			    (let* ((n 5) 
 				   (ar (make-array (list n n) :element-type 'single-float)))
@@ -332,25 +335,26 @@ pause -1
 				(list a
 				      orig
 				      (img-op #'- orig a)))))))))))))
+(declaim (optimize (debug 3) (safety 3)))
 
 #+nil
 (progn ;; create high res image
   (let* ((nn (length *all-fits*))
 	 (step (1- nn))
-	 (kk 0)
 	(ims
 	 (progn ;loop for ky from 0 below 6 collect
 	  (loop for kk from 0 below (- nn step) by step collect
-	       (destructuring-bind (hh ww) (array-dimensions (first *raw*))
+	       nil #+nil(destructuring-bind (zz hh ww) (array-dimensions *imgs*)
 		 (let* ((sc 6)
 			(h (* sc hh))
 			(w (* sc ww))
-			(ar (make-array (list h w) :element-type 'single-float)))
-		   (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
+			(ar (make-array (list h w) :element-type 'single-float
+					:initial-element 0f0)))
+		   #+nil(loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
 			(subseq *blur-big-ma-2* kk (+ kk step)) do
 			(loop for f in e and p in pos do
 			     (when f
-			       (destructuring-bind (fnorm val x+err) f
+			       (destructuring-bind (fnorm val (ii jj) x+err) f
 				 (destructuring-bind ((x dx) (y dy) 
 						      (a da) (b db) (s ds)) x+err
 				   (destructuring-bind (j i val) p
@@ -366,31 +370,8 @@ pause -1
 						   (max 0 
 							(round (* sc (+ i x -2))))))))))))))
 		   ar))))))
-    (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
-#+nil
-(progn ;; look at the data
-  (with-open-file (ss "/dev/shm/dx-center.dat"
-		     :direction :output
-		     :if-exists :supersede
-		     :if-does-not-exist :create)
-   (loop for e in *all-fits* and pos in 
-	*blur-big-ma-2* do
-	(loop for f in e and p in pos do
-	     (when f
-	       (destructuring-bind (fnorm val x+err) f
-		 (destructuring-bind ((x dx) (y dy) 
-				      (a da) (b db) (s ds)) x+err
-		   (destructuring-bind (j i val) p
-		     (when 
-			 (and dx)
-		       (let ((xx (sqrt (+ (expt (- x 2) 2)
-					  (expt (- y 2) 2))) )
-			     (dd (sqrt (+ (expt dx 2)
-					  (expt dy 2)))))
-			 (when a (and (< 0 x 4) (< 0 y 4) (< fnorm .8)
-				    (< 0 a 2) (< .4 b .8) (< dd 2) (< .7 s 3.5))
-			   (format ss "~5,6f ~5,6f~%" 
-				  (+ x i) (+ y j)))))))))))))
+  #+nil  (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
+
 
 ;; ensure sigma > .8 so that those peaks, that were cut on the border of the
 ;; window are rejected
