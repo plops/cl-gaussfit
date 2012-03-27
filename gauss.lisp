@@ -389,17 +389,55 @@ pause -1
 		(destructuring-bind (fnorm val (i j) x+err) f
 		  (destructuring-bind ((x dx) (y dy) 
 				       (a da) (b db) (s ds)) x+err
-		    (push (make-array 2 :element-type 'single-float
-				      :initial-contents
-				      (mapcar #'(lambda (x) (coerce x 'single-float))
-					      (list (+ i x -2) (+ j y -2))))
-			  points))))))
+		    (when (< .7 s)
+		     (push (make-array 2 :element-type 'single-float
+				       :initial-contents
+				       (mapcar #'(lambda (x) (coerce x 'single-float))
+					       (list (+ i x -2) (+ j y -2))))
+			   points)))))))
     (let ((point-a (make-array (length points)
 			       :element-type 'vec
 			       :initial-contents points)))
-      
+      (defparameter *point-a* point-a)
       (time (defparameter *tree* (build-new-tree point-a)))
-      (time (dotimes (i (length point-a)) (nearest-neighbour i *tree*))))))
+      (length point-a))))
+
+#+nil
+(progn ;; 23s ;; find nearest neighbour distances
+  (let* ((n (length *point-a*))
+	 (dists (make-array n :element-type 'single-float)))
+    (dotimes (i n)
+      (multiple-value-bind (p d)
+	  (nearest-neighbour i *tree*)
+	(setf (aref dists i) d)))
+    (defparameter *dists* dists)))
+ 
+#+nil
+(progn ;; create histogram of nearest neighbour distances 
+  (let* ((n 4000)
+	 (hist (make-array n :element-type '(unsigned-byte 64)))
+	 (ma (reduce #'max *dists*)))
+    (loop for d across *dists* do
+	 (incf (aref hist (floor (* n d (/ (* 1.1 ma)))))))
+    ;; figure out x axis of histogram
+    ;; i = n d /(1.1 ma)
+    ;; d = 1.1 ma i / n
+    (defparameter *dists-hist* hist)
+    (with-open-file (s "/dev/shm/dist-hists.dat"
+		       :direction :output
+		       :if-exists :supersede
+		       :if-does-not-exist :create)
+      (dotimes (i (length hist))
+	(format s "~f ~f~%"
+		(/ (* 1.1 ma i) n) 
+		(aref hist i))))
+    (with-open-file (s "/dev/shm/dist-hists.gp"
+		   :direction :output
+		   :if-exists :supersede
+		   :if-does-not-exist :create)
+      (format s "set xlabel \"distance in px\"; set ylabel \"frequency\";plot \"/dev/shm/dist-hists.dat\" u 1:2 w l; pause -1"))))
+
+
 
 (defun mark-points (img ls &key (value .1))
   (let ((v (coerce value (array-element-type img))))

@@ -178,10 +178,10 @@
 (defun nearest-neighbour (target kd-tree)
    (declare (array-index-t target)
 	    (kd-tree kd-tree)
-	    (values array-index-t &optional))
+	    (values array-index-t single-float &optional))
    (with-slots (perm points root)
        kd-tree
-     (let* ((dist 1d20)
+     (let* ((dist 1f20)
 	    (nearest 0)
 	    (*points* points)
 	    (*perm* perm))
@@ -210,7 +210,7 @@
 					 (when (< (- x dist) cutval)
 					   (rec loson))))))))))
 	 (rec root))
-       nearest)))
+       (values nearest dist))))
 
 #+nil
 (let* ((n 30000))
