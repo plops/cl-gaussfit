@@ -1,14 +1,15 @@
 #+nil
 (progn
   (loop for i in '("utils" "gauss-fit" "gauss-blur"
-		   "fits-file" "statistics")
+		   "fits-file" "statistics" "kd90")
        do
        (load (format nil "~a.lisp" i))))
+
 
 (defpackage :gauss
   (:use :cl :utils :gauss-fit 
 	:gauss-blur :fits-file
-	:statistics
+	:statistics :kdtree
 	:sb-ext))
 (in-package :gauss)
 
@@ -238,7 +239,7 @@ pause -1
 
 #+nil
 (progn ;; store data for later use
-  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro2.lisp"
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro3.lisp"
 		     :direction :output
 		     :if-exists :supersede
 		     :if-does-not-exist :create
@@ -255,6 +256,7 @@ pause -1
 #+nil
 (length *all-fits*)
 
+
 #+nil
 (time 
  (progn ;; run the fit on a few images (100 takes 160 seconds)
@@ -262,6 +264,7 @@ pause -1
    (let ((n 5))
     (destructuring-bind (z h w) (array-dimensions *imgs-part*)
       (loop for k from 0 below z do
+	   (format t "~a~%" k)
 	   (progn
 	     (progn ;; run gauss fits on the extracted images
 	       (defparameter
@@ -344,13 +347,13 @@ pause -1
 	(ims
 	 (progn ;loop for ky from 0 below 6 collect
 	  (loop for kk from 0 below (- nn step) by step collect
-	       nil #+nil(destructuring-bind (zz hh ww) (array-dimensions *imgs*)
-		 (let* ((sc 6)
+	       (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
+		 (let* ((sc 10)
 			(h (* sc hh))
 			(w (* sc ww))
 			(ar (make-array (list h w) :element-type 'single-float
 					:initial-element 0f0)))
-		   #+nil(loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
+		   (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
 			(subseq *blur-big-ma-2* kk (+ kk step)) do
 			(loop for f in e and p in pos do
 			     (when f
@@ -360,7 +363,7 @@ pause -1
 				   (destructuring-bind (j i val) p
 				     (when 
 					 (and dx
-					     #+nil  (< .7 s))
+					     (< .7 s))
 				       (incf 
 					(aref ar 
 					      (min (1- h) 
@@ -370,12 +373,33 @@ pause -1
 						   (max 0 
 							(round (* sc (+ i x -2))))))))))))))
 		   ar))))))
-  #+nil  (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
+   (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
 
 
 ;; ensure sigma > .8 so that those peaks, that were cut on the border of the
 ;; window are rejected
 ;; many points have dx < .2
+#+nil
+(progn ;; build a kdtree of the points
+  
+  (let* ((points nil))
+    (loop for e in *all-fits* do
+	 (loop for f in e do
+	      (when f
+		(destructuring-bind (fnorm val (i j) x+err) f
+		  (destructuring-bind ((x dx) (y dy) 
+				       (a da) (b db) (s ds)) x+err
+		    (push (make-array 2 :element-type 'single-float
+				      :initial-contents
+				      (mapcar #'(lambda (x) (coerce x 'single-float))
+					      (list (+ i x -2) (+ j y -2))))
+			  points))))))
+    (let ((point-a (make-array (length points)
+			       :element-type 'vec
+			       :initial-contents points)))
+      
+      (time (defparameter *tree* (build-new-tree point-a)))
+      (time (dotimes (i (length point-a)) (nearest-neighbour i *tree*))))))
 
 (defun mark-points (img ls &key (value .1))
   (let ((v (coerce value (array-element-type img))))
