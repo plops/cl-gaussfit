@@ -282,7 +282,7 @@ pause -1
 			       :center-slice k
 			       :x0 (floor n 2) 
 			       :y0 (floor n 2)
-			       :a 1 :b .49 :sigma .8)
+			       :a 1f0 :b .49 :sigma .8)
 			    (list
 			     fnorm val (list i j)
 			     (loop for e across x and r in err collect
@@ -298,7 +298,7 @@ pause -1
 			(remove-if #'null *fits*) do
 			(destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
 			  (multiple-value-bind (cy cx) (centroid k j i)
-			    (format str "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+			    (format t "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
 				    num  
 				    i (+ i cx) (+ i x -2) 
 				    j (+ j cy) (+ j y -2)

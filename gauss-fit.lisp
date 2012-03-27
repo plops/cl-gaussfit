@@ -62,23 +62,26 @@
 	     (b (deref x 3))
 	     (s (deref x 4))) 
 	(declare (type double-float xx yy a b s))
+	;;(format t "fcn2 ~d ~{~5,2f~}~%" (deref iflag 0)`(,xx ,yy ,a ,b ,s))
 	(ecase (deref iflag 0)
-	  (1 (dotimes (j h)
-		  (dotimes (i w)
-		       (let* ((dx (- (* 1d0 i) xx))
-			      (dy (- (* 1d0 j) yy))
-			      (s2 (/ (* s s))) ;; I just realize that my
-			      ;; variable is not sigma:
-			      ;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
-			      (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
-			      (e (exp arg)) 
-			      (p (+ i (* w j))))
-			 (setf (deref fvec p)
-			       (+ (* -.001 (aref *imgs*
-						 pz 
-						 (+ py j (- (floor h 2)))
-						 (+ px i (- (floor w 2))))) 
-			    b (* a e)))))))
+	  (1 (if (< a 0)
+		 1e9
+		 (dotimes (j h)
+		   (dotimes (i w)
+		     (let* ((dx (- (* 1d0 i) xx))
+			    (dy (- (* 1d0 j) yy))
+			    (s2 (/ (* s s))) ;; I just realize that my
+			    ;; variable is not sigma:
+			    ;; s^2 = 2 sigma^2 -> sigma = s/sqrt(2)
+			    (arg (- (* s2 (+ (* dx dx) (* dy dy)))))
+			    (e (exp arg)) 
+			    (p (+ i (* w j))))
+		       (setf (deref fvec p)
+			     (+ (* -.001 (aref *imgs*
+					       pz 
+					       (+ py j (- (floor h 2)))
+					       (+ px i (- (floor w 2))))) 
+				b (* a e))))))))
 	  (2 (let ((ww (deref ldfjac 0)))
 	       (declare (type (signed-byte 32) ww))
 	       (macrolet ((f (a b)
