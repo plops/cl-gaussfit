@@ -258,12 +258,11 @@ pause -1
 
 
 #+nil
-(time 
- (progn ;; run the fit on a few images (100 takes 160 seconds)
-   (defparameter *all-fits* nil)
-   (let ((n 5))
+(progn ;; run the fit on a few images (100 takes 160 seconds)
+  (defparameter *all-fits* nil)
+  (let ((n 5))
     (destructuring-bind (z h w) (array-dimensions *imgs-part*)
-      (loop for k from 0 below z do
+      (loop for k from 11382 below z do
 	   (format t "~a~%" k)
 	   (progn
 	     (progn ;; run gauss fits on the extracted images
@@ -273,7 +272,7 @@ pause -1
 		      (destructuring-bind (j i val) point
 			(when (and (< 2 i (- w 2 1))
 				   (< 2 j (- h 2 1))
-				   ;(< 100 val)
+					;(< 100 val)
 				   )
 			  (multiple-value-bind (x err fnorm)
 			      (fit-gaussian 
@@ -291,24 +290,24 @@ pause -1
 	       (progn
 		 #+nil
 		 (with-open-file (s "/dev/shm/centro.gp" :direction :output :if-exists :supersede
-				  :if-does-not-exist :create)
+				    :if-does-not-exist :create)
 		   (format s "plot \"/dev/shm/centro.dat\" u 10:8 w p pt 0 ps 0; pause -1"))
-		(with-open-file (str "/dev/shm/centro.dat" :direction :output :if-exists :append
-				   :if-does-not-exist :create)
-		  (loop for num from 0 and (fnorm val (i j) x+err) in
-		       (remove-if #'null *fits*) do
-		       (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-			 (multiple-value-bind (cy cx) (centroid k j i)
-			   (format str "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
-				   num  
-				   i (+ i cx) (+ i x -2) 
-				   j (+ j cy) (+ j y -2)
-				   (sqrt (+ (expt (- cx (- x 2)) 2)
-					    (expt (- cy (- y 2)) 2)))
-				   fnorm val x+err))))))
-	    
+		 (with-open-file (str "/dev/shm/centro.dat" :direction :output :if-exists :append
+				      :if-does-not-exist :create)
+		   (loop for num from 0 and (fnorm val (i j) x+err) in
+			(remove-if #'null *fits*) do
+			(destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+			  (multiple-value-bind (cy cx) (centroid k j i)
+			    (format str "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+				    num  
+				    i (+ i cx) (+ i x -2) 
+				    j (+ j cy) (+ j y -2)
+				    (sqrt (+ (expt (- cx (- x 2)) 2)
+					     (expt (- cy (- y 2)) 2)))
+				    fnorm val x+err))))))
+	       
 	       (setf *all-fits* (append *all-fits* (list *fits*))))
-	  
+	     
 	     #+nil
 	     (progn ;; generate images of the fitted functions
 	       (defparameter *fit-calc*
@@ -337,7 +336,7 @@ pause -1
 						   .001)))
 				(list a
 				      orig
-				      (img-op #'- orig a)))))))))))))
+				      (img-op #'- orig a))))))))))))
 (declaim (optimize (debug 3) (safety 3)))
 
 #+nil
@@ -402,6 +401,10 @@ pause -1
       (time (defparameter *tree* (build-new-tree point-a)))
       (length point-a))))
 
+
+#+nil(defparameter *all-fits-front*
+  *all-fits*)
+
 #+nil
 (time
  (progn ;; 58s ;; find nearest neighbour distances
@@ -415,13 +418,14 @@ pause -1
  
 #+nil
 (progn ;; create histogram of nearest neighbour distances 
-  (let* ((n 400)
+  (let* ((n 8000)
 	 (hist (make-array n :element-type '(unsigned-byte 64)))
-	 (ma (reduce #'max *dists*)))
+	 (ma 2.5 ;(reduce #'max *dists*)
+	   ))
     (loop for d across *dists* do
-	 (incf (aref hist (floor (* n d (/ (* 1.1 ma)))))))
+	 (incf (aref hist (min (1- n) (floor (* n d (/ (* 1. ma))))))))
     ;; figure out x axis of histogram
-    ;; i = n d /(1.1 ma)
+    ;; i = n d /(1. ma)
     ;; d = 1.1 ma i / n
     (defparameter *dists-hist* hist)
     (with-open-file (s "/dev/shm/dist-hists.dat"
@@ -430,13 +434,13 @@ pause -1
 		       :if-does-not-exist :create)
       (dotimes (i (length hist))
 	(format s "~f ~f~%"
-		(/ (* 1.1 ma i) n) 
+		(/ (* 1 ma i) n) 
 		(aref hist i))))
     (with-open-file (s "/dev/shm/dist-hists.gp"
 		   :direction :output
 		   :if-exists :supersede
 		   :if-does-not-exist :create)
-      (format s "set xlabel \"distance in px\"; set ylabel \"frequency\";plot \"/dev/shm/dist-hists.dat\" u 1:2 w l; pause -1"))))
+      (format s "set xlabel \"distance in px\"; set ylabel \"frequency\";plot \"/dev/shm/dist-hists.dat\" u 1:2 w p pt 0; pause -1"))))
 
 
 

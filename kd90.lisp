@@ -186,7 +186,7 @@
 	    (*points* points)
 	    (*perm* perm))
        (labels ((rec (node)
-		  (declare ((or leaf node) node))
+		  (declare (type (or leaf node) node))
 		  (etypecase node
 		    ;; sequential search in the bucket of the leaf
 		    (leaf (with-slots (lopt hipt)
