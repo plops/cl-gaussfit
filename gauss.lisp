@@ -45,7 +45,7 @@
 #+nil
 (time
  (let ((start 0)
-       (n 20))
+       (n 20000))
    (defparameter *blur*
      (loop for k from start below (+ start n) collect
 	  (let* ((s 1.2)
@@ -128,7 +128,8 @@
     (setf *blur-big-ma* (reverse *blur-big-ma*))
     (write-fits "/dev/shm/blur-ma.fits" (img-list->stack *blur-ma*))))
 
-
+#+nil
+(defparameter *blur-ma* nil)
 
 #+nil
 (time
@@ -209,6 +210,14 @@ pause -1
     (setf *blur-big-ma-2* (reverse *blur-big-ma-2*))
     (write-fits "/dev/shm/blur-ma-2.fits" (img-list->stack *blur-ma-2*))))
 
+#+nil
+(defparameter *blur-ma* nil)
+#+nil
+(defparameter *blur-ma-2* nil)
+
+#+nil
+(sb-ext:gc :full t)
+
 (defun centroid (k j i &optional (n 2))
   (let* ((x 0)
 	 (y 0)
@@ -222,8 +231,25 @@ pause -1
 	       (incf count g)
 	       (incf x (* ii g))
 	       (incf y (* jj g)))))
-    (let ((s (/ 1d0 count)))
-      (values (* s y) (* s x)))))
+    (if (< 0 count)
+     (let ((s (/ 1d0 count)))
+       (values (* s y) (* s x)))
+     (values 0d0 0d0))))
+
+#+nil
+(dotimes (i 100)
+  (sleep 1000)
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro.lisp"
+		     :direction :output
+		     :if-exists :supersede
+		     :if-does-not-exist :create
+		     )
+    (write (list *dog-mean-2* *dog-stddev-2* *blur-big-ma-2*
+		 *all-fits*) :stream s))
+  nil)
+
+#+nil
+(length *all-fits*)
 
 #+nil
 (time 
@@ -240,33 +266,47 @@ pause -1
 		 (loop for point in (elt *blur-big-ma-2* k) collect
 		      (destructuring-bind (j i val) point
 			(when (and (< 2 i (- w 2 1))
-				   (< 2 j (- h 2 1)))
+				   (< 2 j (- h 2 1))
+				   ;(< 100 val)
+				   )
 			  (multiple-value-bind (x err fnorm)
 			      (fit-gaussian 
-			       :stack *imgs-part*
+			       :stack *imgs*
 			       :window-w n
 			       :center-x i :center-y j
 			       :center-slice k
-			       :x0 (floor n 2) :y0 (floor n 2)
+			       :x0 (floor n 2) 
+			       :y0 (floor n 2)
 			       :a 1 :b .49 :sigma .8)
 			    (list
 			     fnorm val (list i j)
 			     (loop for e across x and r in err collect
 				  (list e r))))))))
-	       (loop for num from 0 and (fnorm val (i j) x+err) in
-		    (remove-if #'null *fits*) do
-		    (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-		     (multiple-value-bind (cy cx) (centroid k j i)
-		       (format t "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
-			       num i (+ i cx) 
-			       (+ i dx) j (+ j cy) (+ j dy)
-			       fnorm val x+err))))
+	       (progn
+		 #+nil
+		 (with-open-file (s "/dev/shm/centro.gp" :direction :output :if-exists :supersede
+				  :if-does-not-exist :create)
+		   (format s "plot \"/dev/shm/centro.dat\" u 10:8 w p pt 0 ps 0; pause -1"))
+		(with-open-file (str "/dev/shm/centro.dat" :direction :output :if-exists :append
+				   :if-does-not-exist :create)
+		  (loop for num from 0 and (fnorm val (i j) x+err) in
+		       (remove-if #'null *fits*) do
+		       (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
+			 (multiple-value-bind (cy cx) (centroid k j i)
+			   (format str "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+				   num  
+				   i (+ i cx) (+ i x -2) 
+				   j (+ j cy) (+ j y -2)
+				   (sqrt (+ (expt (- cx (- x 2)) 2)
+					    (expt (- cy (- y 2)) 2)))
+				   fnorm val x+err))))))
 	    
 	       (setf *all-fits* (append *all-fits* (list *fits*))))
 	  
 	     #+nil
 	     (progn ;; generate images of the fitted functions
 	       (defparameter *fit-calc*
+
 		 (loop for e in *fits* collect
 		      (when e
 			(destructuring-bind (fnorm val x+err) e

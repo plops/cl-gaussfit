@@ -35,7 +35,7 @@
 (defvar *imgs* (make-array (list 1 1 1) :element-type '(unsigned-byte 16)))
 ;; 16bit 3d stack, note that values are divided by
 ;; 1000 before use
-(declaim (type (array (unsigned-byte 16) 3) *imgs*))
+(declaim (type (simple-array (unsigned-byte 16) 3) *imgs*))
 
 (defvar *current-center* (list 0 0 0)) ;; integer position of the
 				       ;; current maximum
