@@ -46,7 +46,8 @@
 (declaim (inline px))
 (defun px (i j)
   (declare (type array-index-t i j)
-	   (values single-float &optional))
+	   (values single-float &optional)) 
+  ;; i selects point and j the coordinate
   (aref (aref *points* (aref *perm* i)) j))
 
 (defun get-tree-point (kd-tree i)
@@ -218,7 +219,22 @@
 (defun locate-points-in-circle (center radius tree)
   (declare (type (simple-array single-float 1) center)
 	   (type single-float radius)
-	   (type kd-tree tree)))
+	   (type kd-tree tree))
+  (with-slots ((*perm* perm) (*points* points) root) tree
+    (labels ((dist (a-i b)
+	       (declare 
+		(type array-index-t a-i)
+		(type (simple-array single-float 1) b))
+	       (let ((sum 0f0))
+		 (dotimes (i (length b))
+		   (incf sum (* (px a-i i) (aref b i))))
+		 sum))
+	     (rec (node)
+	       (declare (type (or leaf node) node))
+	       (etypecase node
+		 (leaf (with-slots (lopt hipt) node
+			 (loop for i from lopt upto hipt do
+			      (let ((d (dist i center)))))))))))))
 #+nil
 (let* ((n 30000))
   (time (defparameter *tree* (build-new-tree (make-random-points n))))

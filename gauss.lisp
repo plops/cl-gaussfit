@@ -385,7 +385,6 @@ pause -1
 #+nil
 (time
  (progn ;; build a kdtree of the points
-  
    (let* ((points nil))
      (loop for e in *all-fits* do
 	  (loop for f in e do
