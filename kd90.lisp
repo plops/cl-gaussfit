@@ -1,6 +1,6 @@
 ;; the paper I read for this is 1990bentley_kdtree-c++.pdf
 #.(require :alexandria)
-(declaim (optimize (speed 0) (safety 3) (debug 3)))
+(declaim (optimize (speed 3) (safety 3) (debug 3)))
 
 (defpackage :kdtree
   (:use :cl :alexandria)
@@ -13,7 +13,7 @@
 (in-package :kdtree)
 
 (defconstant +dim+ 2) ;; you can set this to three but then the postscript output doesn't work
-(declaim (fixnum +dim+))
+(declaim (type fixnum +dim+))
 
 (deftype vec ()
   `(simple-array single-float (#.+dim+)))
@@ -41,17 +41,17 @@
 
 (defparameter *points* (make-array 0 :element-type 'vec))
 (defparameter *perm* (make-array 0 :element-type 'array-index-t))
-(declaim ((simple-array vec 1) *points*)
-	 ((simple-array array-index-t 1) *perm*))
+(declaim (type (simple-array vec 1) *points*)
+	 (type (simple-array array-index-t 1) *perm*))
 (declaim (inline px))
 (defun px (i j)
-  (declare (array-index-t i j)
+  (declare (type array-index-t i j)
 	   (values single-float &optional))
   (aref (aref *points* (aref *perm* i)) j))
 
 (defun get-tree-point (kd-tree i)
-  (declare (kd-tree kd-tree)
-	   (fixnum i)
+  (declare (type kd-tree kd-tree)
+	   (type fixnum i)
 	   (values vec &optional))
   (with-slots (points
 	       perm)
@@ -59,8 +59,8 @@
     (aref points (aref perm i))))
 
 (defun max-spread-in-dim (dim l u)
-  (declare (array-index-t l u)
-	   (axis dim)
+  (declare (type array-index-t l u)
+	   (type axis dim)
 	   (values single-float &optional))
   (let ((mi (px l dim))
 	(ma (px l dim)))
@@ -73,7 +73,7 @@
     (- ma mi)))
 
 (defun find-max-spread-dimension (l u)
-  (declare (array-index-t l u)
+  (declare (type array-index-t l u)
 	   (values axis &optional))
   (let ((spread 0f0)
 	(dim (the axis 0)))
@@ -86,7 +86,7 @@
     dim))
 
 (defun swap (a b)
-  (declare (array-index-t a b)
+  (declare (type array-index-t a b)
 	   (values null &optional))
   (let ((h (aref *perm* a)))
     (setf (aref *perm* a) (aref *perm* b)
@@ -94,8 +94,8 @@
   nil)
 
 (defun select (l u m cutdim)
-  (declare (array-index-t l u m)
-	   (axis cutdim)
+  (declare (type array-index-t l u m)
+	   (type axis cutdim)
 	   (values fixnum &optional))
   (labels ((p (l) ;; accessor
 	     (declare (fixnum l)
@@ -111,7 +111,7 @@
 	   (let ((mid (floor (+ u l) 2)))
 	     (swap mid (1+ l))
 	     (labels ((enforce< (l u)
-			(declare (fixnum l u)
+			(declare (type fixnum l u)
 				 (values null &optional))
 			(when (< (p u) (p l)) (swap u l))
 			nil))
@@ -135,7 +135,7 @@
 	       (when (<= j m) (setf l i))))))))
 
 (defun build (l u)
-  (declare (array-index-t l u)
+  (declare (type array-index-t l u)
 	   (values (or node leaf) &optional))
   (let ((points-in-bucket 14)) ;; change this back to somewhere like 14 for better performance
    (if (<= (1+ (- u l)) (1- points-in-bucket))
@@ -146,11 +146,11 @@
 	 (select l u m cutdim)
 	 (make-node :cutdim cutdim 
 		    :cutval (px m cutdim)
-		    :loson (build l m)
+		    :loson (build l m) ;; the next select will only shuffle inside l .. m
 		    :hison (build (1+ m) u))))))
 
 (defun build-new-tree (points)
-  (declare ((simple-array vec 1) points)
+  (declare (type (simple-array vec 1) points)
 	   (values kd-tree &optional))
   (let* ((n (length points))
 	 (*points* points)
@@ -167,17 +167,20 @@
   (defparameter *tree* (build-new-tree (make-random-points n))))
 
 (defun distance (i j)
-  (declare (array-index-t i j)
+  (declare (type array-index-t i j)
 	   (values single-float &optional))
   (let ((sum 0f0))
+    (declare (type (single-float 0f0) sum))
     (dotimes (k +dim+)
-      (let ((v (- (px i k) (px j k))))
-	(incf sum (* v v))))
+      (let* ((v (- (px i k) (px j k)))
+	     (v2 (* v v)))
+	(declare (type (single-float 0f0) v2))
+	(incf sum v2)))
     (sqrt sum)))
 
 (defun nearest-neighbour (target kd-tree)
-   (declare (array-index-t target)
-	    (kd-tree kd-tree)
+   (declare (type array-index-t target)
+	    (type kd-tree kd-tree)
 	    (values array-index-t single-float &optional))
    (with-slots (perm points root)
        kd-tree
@@ -212,6 +215,10 @@
 	 (rec root))
        (values nearest dist))))
 
+(defun locate-near (point radius tree)
+  (declare (type (simple-array single-float 1) point)
+	   (type single-float radius)
+	   (type kd-tree tree)))
 #+nil
 (let* ((n 30000))
   (time (defparameter *tree* (build-new-tree (make-random-points n))))

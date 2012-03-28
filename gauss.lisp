@@ -219,6 +219,7 @@ pause -1
 #+nil
 (sb-ext:gc :full t)
 
+#+nil
 (defun centroid (k j i &optional (n 2))
   (let* ((x 0)
 	 (y 0)
@@ -239,23 +240,26 @@ pause -1
 
 #+nil
 (progn ;; store data for later use
-  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro4.lisp"
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro4-16001.lisp"
 		     :direction :output
 		     :if-exists :supersede
 		     :if-does-not-exist :create
 		     )
-    (write `(progn (defparameter *1dog-mean-2* ,*dog-mean-2*) 
+    (write `(progn (defparameter *1dog-mean-2* ,*dog-mean-2*)
 		   (defparameter *1dog-stddev-2* ,*dog-stddev-2*)
 		   (defparameter *1blur-big-ma-2* ',*blur-big-ma-2*)
 		   (defparameter *1all-fits* ',*all-fits*)) :stream s))
   nil)
 
 #+nil
-(load "/home/martin/0316/cl-gaussfit/store-centro2.lisp")
+(load "/home/martin/0316/cl-gaussfit/store-centro4-16001.lisp")
 
 #+nil
-(length *all-fits*)
-
+(progn
+  (defparameter *dog-mean-2* *1dog-mean-2*)
+  (defparameter *dog-stddev-2* *1dog-stddev-2*)
+  (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
+  (defparameter *all-fits* *1all-fits*))
 
 #+nil
 (progn ;; run the fit on a few images (100 takes 160 seconds)
@@ -298,7 +302,7 @@ pause -1
 			(remove-if #'null *fits*) do
 			(destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
 			  (multiple-value-bind (cy cx) (centroid k j i)
-			    (format t "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
+			    (format str "~3d ~3d ~5,2f ~5,2f ~3d ~5,2f ~5,2f ~5,2f ~4,2f ~4,0f ~{~{~7,2f ~3,2f~}~}~%"
 				    num  
 				    i (+ i cx) (+ i x -2) 
 				    j (+ j cy) (+ j y -2)
@@ -339,6 +343,7 @@ pause -1
 				      (img-op #'- orig a))))))))))))
 (declaim (optimize (debug 3) (safety 3)))
 
+
 #+nil
 (progn ;; create high res image
   (let* ((nn (length *all-fits*))
@@ -347,7 +352,7 @@ pause -1
 	 (progn ;loop for ky from 0 below 6 collect
 	  (loop for kk from 0 below (- nn step) by step collect
 	       (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
-		 (let* ((sc 10)
+		 (let* ((sc 20)
 			(h (* sc hh))
 			(w (* sc ww))
 			(ar (make-array (list h w) :element-type 'single-float
@@ -361,8 +366,7 @@ pause -1
 						      (a da) (b db) (s ds)) x+err
 				   (destructuring-bind (j i val) p
 				     (when 
-					 (and dx
-					     (< .7 s))
+					 t
 				       (incf 
 					(aref ar 
 					      (min (1- h) 
@@ -401,13 +405,9 @@ pause -1
       (time (defparameter *tree* (build-new-tree point-a)))
       (length point-a))))
 
-
-#+nil(defparameter *all-fits-front*
-  *all-fits*)
-
 #+nil
 (time
- (progn ;; 58s ;; find nearest neighbour distances
+ (progn ;; 142s ;; find nearest neighbour distances
    (let* ((n (length *point-a*))
 	  (dists (make-array n :element-type 'single-float)))
      (dotimes (i n)
@@ -418,7 +418,7 @@ pause -1
  
 #+nil
 (progn ;; create histogram of nearest neighbour distances 
-  (let* ((n 8000)
+  (let* ((n 12800)
 	 (hist (make-array n :element-type '(unsigned-byte 64)))
 	 (ma 2.5 ;(reduce #'max *dists*)
 	   ))
