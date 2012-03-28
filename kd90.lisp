@@ -215,8 +215,8 @@
 	 (rec root))
        (values nearest dist))))
 
-(defun locate-near (point radius tree)
-  (declare (type (simple-array single-float 1) point)
+(defun locate-points-in-circle (center radius tree)
+  (declare (type (simple-array single-float 1) center)
 	   (type single-float radius)
 	   (type kd-tree tree)))
 #+nil

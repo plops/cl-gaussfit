@@ -383,31 +383,32 @@ pause -1
 ;; window are rejected
 ;; many points have dx < .2
 #+nil
-(progn ;; build a kdtree of the points
+(time
+ (progn ;; build a kdtree of the points
   
-  (let* ((points nil))
-    (loop for e in *all-fits* do
-	 (loop for f in e do
-	      (when f
-		(destructuring-bind (fnorm val (i j) x+err) f
-		  (destructuring-bind ((x dx) (y dy) 
-				       (a da) (b db) (s ds)) x+err
-		    (when (< .7 s)
-		     (push (make-array 2 :element-type 'single-float
-				       :initial-contents
-				       (mapcar #'(lambda (x) (coerce x 'single-float))
-					       (list (+ i x -2) (+ j y -2))))
-			   points)))))))
-    (let ((point-a (make-array (length points)
-			       :element-type 'vec
-			       :initial-contents points)))
-      (defparameter *point-a* point-a)
-      (time (defparameter *tree* (build-new-tree point-a)))
-      (length point-a))))
+   (let* ((points nil))
+     (loop for e in *all-fits* do
+	  (loop for f in e do
+	       (when f
+		 (destructuring-bind (fnorm val (i j) x+err) f
+		   (destructuring-bind ((x dx) (y dy) 
+					(a da) (b db) (s ds)) x+err
+		     (when (< .7 s)
+		       (push (make-array 2 :element-type 'single-float
+					 :initial-contents
+					 (mapcar #'(lambda (x) (coerce x 'single-float))
+						 (list (+ i x -2) (+ j y -2))))
+			     points)))))))
+     (let ((point-a (make-array (length points)
+				:element-type 'vec
+				:initial-contents points)))
+       (defparameter *point-a* point-a)
+       (time (defparameter *tree* (build-new-tree point-a)))
+       (length point-a)))))
 
 #+nil
 (time
- (progn ;; 142s ;; find nearest neighbour distances
+ (progn ;; 43s ;; find nearest neighbour distances
    (let* ((n (length *point-a*))
 	  (dists (make-array n :element-type 'single-float)))
      (dotimes (i n)
