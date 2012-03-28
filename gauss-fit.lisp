@@ -62,9 +62,9 @@
 	     (b (deref x 3))
 	     (s (deref x 4))) 
 	(declare (type double-float xx yy a b s))
-	;;(format t "fcn2 ~d ~{~5,2f~}~%" (deref iflag 0)`(,xx ,yy ,a ,b ,s))
+;	(format t "fcn2 ~d ~{~5,2f~}~%" (deref iflag 0)`(,xx ,yy ,a ,b ,s))
 	(ecase (deref iflag 0)
-	  (1 (if (< a 0)
+	  (1 (if (< a .1)
 		 1e9
 		 (dotimes (j h)
 		   (dotimes (i w)
