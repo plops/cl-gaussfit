@@ -26,22 +26,23 @@
     (+ b (* a e))))
 
 ;; load the data and swap endian
-(defvar *imgs*
-  (with-open-file (s "example-movie_64x64x30000.raw"
-		     :direction :input
-		     :element-type '(unsigned-byte 16))
-    (let* ((z 30000)
-	   (x 64)
-	   (y 64)
-	   (n (* z x y)) 
-	   (a (make-array n :element-type '(unsigned-byte 16)))
-	   (b (make-array (list z y x) :element-type '(unsigned-byte 16)))
-	   (b1 (sb-ext:array-storage-vector b)))
-      (read-sequence a s)
-      (dotimes (i n)
-	(setf (aref b1 i) (+ (ldb (byte 8 8) (aref a i))
-			     (* 256 (ldb (byte 8 0) (aref a i))))))
-      b)))
+(time
+ (defvar *imgs*
+   (with-open-file (s "example-movie_64x64x30000.raw"
+		      :direction :input
+		      :element-type '(unsigned-byte 16))
+     (let* ((z 30000)
+	    (x 64)
+	    (y 64)
+	    (n (* z x y)) 
+	    (a (make-array n :element-type '(unsigned-byte 16)))
+	    (b (make-array (list z y x) :element-type '(unsigned-byte 16)))
+	    (b1 (sb-ext:array-storage-vector b)))
+       (read-sequence a s)
+       (dotimes (i n)
+	 (setf (aref b1 i) (+ (ldb (byte 8 8) (aref a i))
+			      (* 256 (ldb (byte 8 0) (aref a i))))))
+       b))))
 
 #+nil
 (time
@@ -251,7 +252,8 @@ pause -1
   nil)
 
 #+nil
-(load "/home/martin/0316/cl-gaussfit/sicher/store-centro4.lisp")
+(time
+ (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4.lisp"))
 
 #+nil
 (progn
@@ -265,10 +267,10 @@ pause -1
 
 #+nil 
 (progn ;; run the fit on a few images (100 takes 160 seconds)
-  ;;(defparameter *all-fits* nil)
+  (defparameter *all-fits* nil)
   (let ((n 5))
     (destructuring-bind (z h w) (array-dimensions *imgs-part*)
-      (loop for k from 178 below z do
+      (loop for k from 0 below z do
 	   (format t "~a~%" k)
 	   (progn
 	     (progn ;; run gauss fits on the extracted images
@@ -285,7 +287,7 @@ pause -1
 			       :stack *imgs*
 			       :window-w n
 			       :center-x i :center-y j
-			       :center-slice k
+			       :center-slice (+ 20000 k)
 			       :x0 (floor n 2) 
 			       :y0 (floor n 2)
 			       :a 1f0 :b .49 :sigma .8)
@@ -294,10 +296,6 @@ pause -1
 			     (loop for e across x and r in err collect
 				  (list e r))))))))
 	       (progn
-		 #+nil
-		 (with-open-file (s "/dev/shm/centro.gp" :direction :output :if-exists :supersede
-				    :if-does-not-exist :create)
-		   (format s "plot \"/dev/shm/centro.dat\" u 10:8 w p pt 0 ps 0; pause -1"))
 		 (with-open-file (str "/dev/shm/centro.dat" :direction :output :if-exists :append
 				      :if-does-not-exist :create)
 		   (loop for num from 0 and (fnorm val (i j) x+err) in
@@ -316,6 +314,9 @@ pause -1
 	     
 	     )))))
 (declaim (optimize (debug 3) (safety 3)))
+
+
+
 
 #+nil
 (progn ;; generate images of the fitted functions
@@ -341,7 +342,7 @@ pause -1
 	     (insert-rectangle a f j i))))
     (write-fits "/dev/shm/fit-calc.fits" 
 		(img-list->stack
-		 (let ((orig (img-mul (ub16->single-2 (extract-frame *imgs* 0))
+		 (let ((orig (img-mul (ub16->single-2 (extract-frame *imgs* 20000))
 				      .001)))
 		   (list a
 			 orig

@@ -53,7 +53,7 @@
      (ldfjac (* int)) ; 1  ;; leading dimension of fjac
      (iflag (* int))) ; 1 1: fvec, 2: fjac
   (destructuring-bind (pz py px) *current-center*
-    (declare (type (integer 0 16000) px py pz))
+    (declare (type (integer 0 160000) px py pz))
     (destructuring-bind (h w) *current-window-size*
       (declare (type (integer 1 16000) h w))
       (let* ((xx (deref x 0))
@@ -146,7 +146,7 @@
 		     (x0 2d0) (y0 2d0) (a 1d0) (b .45d0) (sigma .8d0))
   (declare (type (integer 1) window-w window-h)
 	   (type (integer 0) center-slice))
-  (unless (<= 0 center-slice (array-dimension *imgs* 0))
+  (unless (<= 0 center-slice (array-dimension stack 0))
     (error "stack has not enough slices for center-slice=~d" center-slice))
   (setf *imgs* stack)
   (setf *current-center* (list center-slice center-y center-x))
