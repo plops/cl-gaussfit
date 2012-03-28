@@ -361,7 +361,7 @@ pause -1
 	 (progn ;loop for ky from 0 below 6 collect
 	  (loop for kk from 0 below (- nn step) by step collect
 	       (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
-		 (let* ((sc 6)
+		 (let* ((sc 3)
 			(h (* sc hh))
 			(w (* sc ww))
 			(ar (make-array (list h w) :element-type 'single-float
@@ -375,12 +375,12 @@ pause -1
 						      (a da) (b db) (s ds)) x+err
 				   (destructuring-bind (j i val) p
 				     (when 
-					 (< .6 s .9)
+					 t
 				       (incf 
 					(aref ar 
 					      (min (1- h) 
 						   (max 0 
-							(round (* sc (+ j y -2))))) 
+							(round (* sc (+ j y -2)))))
 					      (min (1- w) 
 						   (max 0 
 							(round (* sc (+ i x -2))))))))))))))
