@@ -319,34 +319,38 @@ pause -1
 
 
 #+nil
-(progn ;; generate images of the fitted functions
-  (defparameter *fit-calc*
-    
-    (loop for e in (first *all-fits*) collect
-	 (when e
-	   (destructuring-bind (fnorm val (ii jj) x+err) e
-	     (destructuring-bind ((x dx) (y dy) (a da) (b db) (s ds)) x+err
-	       (let* ((n 5) 
-		      (ar (make-array (list n n) :element-type 'single-float)))
-		 (dotimes (j n)
-		   (dotimes (i n)
-		     (setf (aref ar j i) (coerce (g i j x y a b s)
-						 'single-float))))
-		 ar))))))
-  (let ((a (make-array (cdr (array-dimensions *imgs*))
-		       :element-type 'single-float
-		       :initial-element .49)))
-    (loop for f in *fit-calc* and pos in (elt *blur-big-ma-2* 0) do
-	 (when f
-	   (destructuring-bind (j i val) pos
-	     (insert-rectangle a f j i))))
-    (write-fits "/dev/shm/fit-calc.fits" 
-		(img-list->stack
-		 (let ((orig (img-mul (ub16->single-2 (extract-frame *imgs* 20000))
-				      .001)))
-		   (list a
-			 orig
-			 (img-op #'- orig a)))))))
+(time
+ (progn ;; generate images of the fitted functions
+   (let ((res nil))
+     (loop for if below (length *all-fits*) by 1 collect
+	  (let ((a (make-array (cdr (array-dimensions *imgs*))
+			       :element-type 'single-float
+			       :initial-element .49))
+		(fitcalc (loop for e in (elt *all-fits* if) collect
+			      (when e
+				(destructuring-bind (fnorm val (ii jj) x+err) e
+				  (destructuring-bind ((x dx) (y dy) (a da)
+						       (b db) (s ds)) x+err
+				    (let* ((n 5) 
+					   (ar (make-array (list n n)
+							   :element-type 'single-float)))
+				      (dotimes (j n)
+					(dotimes (i n)
+					  (setf (aref ar j i) (coerce (g i j x y a b s)
+								      'single-float))))
+				      ar)))))))
+	    (loop for f in fitcalc and pos in (elt *blur-big-ma-2* if) do
+		 (when f
+		   (destructuring-bind (j i val) pos
+		     (insert-rectangle a f j i))))
+	    (let ((orig (img-mul (ub16->single-2 (extract-frame *imgs* 
+								(+ if 20000)))
+				 .001)))
+	      (setf res (append res 
+				(list ;a
+				      ;orig
+				       (img-op #'- orig a)))))))
+     (write-fits "/dev/shm/fit-calc.fits" (img-list->stack res)))))
 
 
 #+nil
