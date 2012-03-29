@@ -434,6 +434,9 @@ pause -1
        (length point-a)))))
 ;; 0.2s build tree 28870 
 ;; 0.75s all nn
+#+nil
+(length
+ (locate-points-in-circle-around-target 300 10f0 *tree*))
 
 #+nil
 (time

@@ -8,7 +8,8 @@
 	   #:nearest-neighbour
 	   #:kd-tree-points
 	   #:perm
-	   #:get-tree-point))
+	   #:get-tree-point
+	   #:locate-points-in-circle-around-target))
 
 (in-package :kdtree)
 
@@ -31,14 +32,12 @@
 (defstruct node
   (cutdim (required-argument :cutdim) :type axis)
   (cutval (required-argument :cutval) :type single-float)
-  (father (required-argument :father) :type node)
   (loson (required-argument :loson) :type (or node leaf))
   (hison (required-argument :hison) :type (or node leaf)))
 
 (defstruct kd-tree
   (root nil :type (or null node))
   (points (required-argument :points) :type (simple-array vec 1))
-  (bucketptr (required-argument :bucketptr) :type (simple-array leaf 1))
   (perm (required-argument :perm) :type (simple-array array-index-t 1)))
 
 (defparameter *points* (make-array 0 :element-type 'vec))
@@ -220,26 +219,38 @@
 	 (rec root))
        (values nearest nndist2))))
 
-#+nil
-(defun locate-points-in-circle (center radius tree)
-  (declare (type (simple-array single-float 1) center)
+
+(defun locate-points-in-circle-around-target (target radius tree)
+  (declare (type array-index-t target)
 	   (type single-float radius)
 	   (type kd-tree tree))
-  (with-slots ((*perm* perm) (*points* points) root) tree
-    (labels ((dist (a-i b)
-	       (declare 
-		(type array-index-t a-i)
-		(type (simple-array single-float 1) b))
-	       (let ((sum 0f0))
-		 (dotimes (i (length b))
-		   (incf sum (* (px a-i i) (aref b i))))
-		 sum))
-	     (rec (node)
-	       (declare (type (or leaf node) node))
-	       (etypecase node
-		 (leaf (with-slots (lopt hipt) node
-			 (loop for i from lopt upto hipt do
-			      (let ((d (dist i center)))))))))))))
+  (with-slots (perm points root) tree
+   (let* ((nndist radius)
+	  (nndist2 (expt nndist 2))
+	  (*perm* perm)
+	  (*points* points)
+	  (res nil))
+     (labels ((rec (node)
+		(declare (type (or leaf node) node))
+		(etypecase node
+		  (leaf (with-slots (lopt hipt) node
+			  (loop for i from lopt upto hipt do
+			       (when (< (distance2 (aref perm i) target)
+					nndist2)
+				 (push (aref *perm* i) res)))
+			  (return-from rec nil)))
+		  (node (with-slots (cutval cutdim loson hison) node
+			  (let* ((x (px target cutdim))
+				 (diff (- x cutval)))
+			    (if (< diff 0f0)
+				(progn (rec loson)
+				       (when (<= (- diff) nndist) 
+					 (rec hison)))
+				(progn (rec hison)
+				       (when (<= diff nndist)
+					 (rec loson))))))))))
+       (rec root)
+       (reverse res)))))
 #+nil
 (let* ((n 30000))
   (time (defparameter *tree* (build-new-tree (make-random-points n))))
