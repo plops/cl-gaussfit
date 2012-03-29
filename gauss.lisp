@@ -253,7 +253,7 @@ pause -1
 
 #+nil
 (time
- (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4.lisp"))
+ (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4c.lisp"))
 
 #+nil
 (progn
@@ -262,8 +262,16 @@ pause -1
   (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
   (defparameter *all-fits* *1all-fits*))
 #+nil
-(defparameter *all-fits* *178fits* )
+(defparameter *all-fits* (append *all-fits* *1all-fits*))
 
+#+nil
+(progn
+  (defparameter *all-fits* nil)
+ (loop for i in '("" "b" "c") do
+      (load 
+       (format nil "/home/martin/0316/cl-gaussfit/sicher/store-centro4~a.lisp" i))
+      (format t "len~a~%" (list (length *all-fits*) (length *1all-fits*)))
+      (setf *all-fits* (append *all-fits* *1all-fits*))))
 
 #+nil 
 (progn ;; run the fit on a few images (100 takes 160 seconds)
@@ -375,7 +383,7 @@ pause -1
 						      (a da) (b db) (s ds)) x+err
 				   (destructuring-bind (j i val) p
 				     (when 
-					 t
+					 (< dx .3)
 				       (incf 
 					(aref ar 
 					      (min (1- h) 
