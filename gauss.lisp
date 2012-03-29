@@ -46,8 +46,8 @@
 
 #+nil
 (time
- (let ((start 20000)
-       (n 10000))
+ (let ((start 16000)
+       (n 4000))
    (defparameter *blur*
      (loop for k from start below (+ start n) collect
 	  (let* ((s 1.2)
@@ -295,7 +295,7 @@ pause -1
 			       :stack *imgs*
 			       :window-w n
 			       :center-x i :center-y j
-			       :center-slice (+ 20000 k)
+			       :center-slice (+ 16000 k)
 			       :x0 (floor n 2) 
 			       :y0 (floor n 2)
 			       :a 1f0 :b .49 :sigma .8)
@@ -352,7 +352,7 @@ pause -1
 		   (destructuring-bind (j i val) pos
 		     (insert-rectangle a f j i))))
 	    (let ((orig (img-mul (ub16->single-2 (extract-frame *imgs* 
-								(+ if 20000)))
+								(+ if 16000)))
 				 .001)))
 	      (setf res (append res 
 				(list ;a
@@ -369,29 +369,27 @@ pause -1
 	 (progn ;loop for ky from 0 below 6 collect
 	  (loop for kk from 0 below (- nn step) by step collect
 	       (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
-		 (let* ((sc 3)
+		 (let* ((sc 30)
 			(h (* sc hh))
 			(w (* sc ww))
 			(ar (make-array (list h w) :element-type 'single-float
 					:initial-element 0f0)))
-		   (loop for e in (subseq *all-fits* kk (+ kk step)) and pos in 
-			(subseq *blur-big-ma-2* kk (+ kk step)) do
-			(loop for f in e and p in pos do
+		   (loop for e in (subseq *all-fits* kk (+ kk step)) do
+			(loop for f in e do
 			     (when f
 			       (destructuring-bind (fnorm val (ii jj) x+err) f
 				 (destructuring-bind ((x dx) (y dy) 
 						      (a da) (b db) (s ds)) x+err
-				   (destructuring-bind (j i val) p
-				     (when 
-					 (< dx .3)
-				       (incf 
-					(aref ar 
-					      (min (1- h) 
-						   (max 0 
-							(round (* sc (+ j y -2)))))
-					      (min (1- w) 
-						   (max 0 
-							(round (* sc (+ i x -2))))))))))))))
+				   (when (and dx
+					  (< dx .3))
+				     (incf 
+				      (aref ar 
+					    (min (1- h) 
+						 (max 0 
+						      (round (* sc (+ jj y -2)))))
+					    (min (1- w) 
+						 (max 0 
+						      (round (* sc (+ ii x -2)))))))))))))
 		   ar))))))
    (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
 
@@ -415,7 +413,7 @@ pause -1
 (time
  (progn ;; build a kdtree of the points
    (let* ((points nil))
-     (loop for e in *all-fits* do
+     (loop for e in *1all-fits* do
 	  (loop for f in e do
 	       (when f
 		 (destructuring-bind (fnorm val (i j) x+err) f
@@ -433,6 +431,8 @@ pause -1
        (defparameter *point-a* point-a)
        (time (defparameter *tree* (build-new-tree point-a)))
        (length point-a)))))
+;; 0.2s build tree 28870 
+;; 0.75s all nn
 
 #+nil
 (time
