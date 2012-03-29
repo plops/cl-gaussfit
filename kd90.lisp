@@ -124,6 +124,7 @@
 		    (j u)
 		    (ia (aref *perm* i))
 		    (a (p i)))
+	       (declare (type fixnum i j))
 	       (loop ;; scan up and down, put big elements right, small
 		  ;; ones left
 		  (loop do (incf i) while (< (p i) a))
@@ -167,7 +168,7 @@
 (let* ((n 300))
   (defparameter *tree* (build-new-tree (make-random-points n))))
 
-(defun distance (i j)
+(defun distance2 (i j)
   (declare (type array-index-t i j)
 	   (values single-float &optional))
   (let ((sum 0f0))
@@ -177,7 +178,7 @@
 	     (v2 (* v v)))
 	(declare (type (single-float 0f0) v2))
 	(incf sum v2)))
-    (sqrt sum)))
+    sum))
 
 (defun nearest-neighbour (target kd-tree)
    (declare (type array-index-t target)
@@ -185,7 +186,7 @@
 	    (values array-index-t single-float &optional))
    (with-slots (perm points root)
        kd-tree
-     (let* ((dist 1f20)
+     (let* ((nndist2 1f20)
 	    (nearest 0)
 	    (*points* points)
 	    (*perm* perm))
@@ -196,26 +197,28 @@
 		    (leaf (with-slots (lopt hipt)
 			      node
 			    (loop for i from lopt upto hipt do
-				 (let ((d (distance (aref perm i) target)))
-				   (when (< d dist)
-				     (setf dist d
+				 (let ((d (distance2 (aref perm i) target)))
+				   (when (< d nndist2)
+				     (setf nndist2 d
 					   nearest (aref perm i)))))
 			    (return-from rec nil)))
 		    ;; search in the closer son, if nothing there,
 		    ;; search in farther son as well
 		    (node (with-slots (cutval cutdim loson hison)
 			      node
-			    (let ((x (px target cutdim)))
-			      (if (< x cutval)
+			    (let* ((x (px target cutdim))
+				   (diff (- x cutval)))
+			      (if (< diff 0f0)
 				  (progn (rec loson)
-					 (when (< cutval (+ x dist))
+					 (when (< (expt diff 2) nndist2) ;(< cutval (+ x dist))
 					   (rec hison)))
 				  (progn (rec hison)
-					 (when (< (- x dist) cutval)
+					 (when (< (expt diff 2) nndist2) ;(< (- x dist) cutval)
 					   (rec loson))))))))))
 	 (rec root))
-       (values nearest dist))))
+       (values nearest nndist2))))
 
+#+nil
 (defun locate-points-in-circle (center radius tree)
   (declare (type (simple-array single-float 1) center)
 	   (type single-float radius)
@@ -243,3 +246,116 @@
 ;; 10s to find all nn for 30000 points when 2, 9 or 14 points in bucket
 ;; 11.5s for 20 points in bucket
 ;; 14s for 50 points in bucket
+
+(progn
+;; for debugging I draw the points and the rectangles into an eps
+;; file.  There is also a function that writes the tree in a format
+;; that the program dot (from the graphviz) package can render in a
+;; postscript image of the trees graph structure.
+
+(defun split-box (dim box lo-p cut) ;; its actually not box but rectangle
+  "A box is a list 4 values (the coordinates of the min and max
+point). This function splits it along the direction DIM (which is
+either 0 or 1). When LO-P is true the part with the lower values is
+returned."
+  (declare ((member 0 1) dim)
+	   (list box)
+	   (boolean lo-p)
+	   (single-float cut)
+	   (values list &optional))
+  (destructuring-bind (px py qx qy)
+      box
+    (if (eq dim 0)
+	 (if lo-p
+	     (list px py cut qy)
+	     (list cut py qx qy))
+	 (if lo-p
+	     (list px py qx cut)
+	     (list px cut qx qy)))))
+#+nil
+(split-box 0 (list 0 0 1 1) t .5)
+
+(defun readable-float (x)
+  "Prints only a few digits of a float X into a string, to make the
+output more readable."
+  (read-from-string 
+   (format nil "~2,4f" x)))
+
+
+(defun draw-tree-boxes (root)
+  (declare (node root))
+  (let ((boxes nil))
+    ;; add boxes of only those nodes at the bottom of the tree, that
+    ;; have a leaf in loson or hison
+    (labels ((rec (node box)
+	      (when (typep node 'node)
+		(with-slots (loson hison cutdim cutval)
+		    node
+		  (when (or (typep loson 'leaf)
+			    (typep hison 'leaf))
+		    (push box boxes)
+		    #+nil (format t "~a~%" (mapcar #'readable-float box)))
+		  (rec loson (split-box cutdim box t cutval))
+		  (rec hison (split-box cutdim box nil cutval))))))
+      (rec root (list 0f0 0f0 1f0 1f0)))
+    boxes))
+
+#+nil
+(defparameter *boxes*
+  (draw-tree-boxes (kd-tree-root *tree*)))
+
+
+#+nil
+(with-open-file (s "/home/martin/tmp/tree.dot" :direction :output
+		   :if-exists :supersede)
+ (dot-draw-tree s (kd-tree-root *tree*)))
+
+(defun eps-moveto (x y)
+  (declare (single-float x y))
+  (format nil "~f ~f moveto~%" x y))
+
+(defun eps-lineto (x y)
+  (declare (single-float x y))
+  (format nil "~f ~f lineto~%" x y))
+
+(defun eps-rectangle (box)
+  (declare (list box))
+  (destructuring-bind (x0 y0 x y)
+      box
+    (declare (single-float x0 y0 x y))
+    (format nil "newpath~%~a~a~a~a~astroke~%"
+	   (eps-moveto x0 y0)
+	   (eps-lineto x y0)
+	   (eps-lineto x y)
+	   (eps-lineto x0 y)
+	   (eps-lineto x0 y0))))
+
+(defun eps-point (x y)
+  (declare (single-float x y))
+  (format nil "newpath ~f ~f 0.04 0 360 arc closepath fill~%" x y))
+
+
+(defun eps-tree (fn boxes points)
+  (declare (list boxes)
+	   ((simple-array vec 1) points)
+	   (string fn))
+  (with-open-file (s fn :direction :output
+		     :if-exists :supersede)
+    (format s "%!PS-Adobe-3.0
+%%Pages: 1
+%%BoundingBox: 0 0 700 500
+%%EndComments
+10 10 translate
+8.0 8.0 scale
+0.002 setlinewidth
+0 setgray~%")
+   (loop for b in boxes do
+	(format s "~a" (eps-rectangle b)))
+   (loop for p across points do
+	(format s "~a" (eps-point (aref p 0) (aref p 1))))
+   (format s "%%EOF"))))
+
+#+nil
+(eps-tree "/dev/shm/o.ps"
+	  (draw-tree-boxes (kd-tree-root gauss::*tree*)) 
+	  (kd-tree-points gauss::*tree*))
