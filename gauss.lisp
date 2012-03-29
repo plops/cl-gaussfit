@@ -240,7 +240,7 @@ pause -1
 
 #+nil
 (progn ;; store data for later use
-  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro4c.lisp"
+  (with-open-file (s "/home/martin/0316/cl-gaussfit/store-centro4+a+b+c16000-20000+d20000-29999.lisp"
 		     :direction :output
 		     :if-exists :supersede
 		     :if-does-not-exist :create
@@ -261,13 +261,12 @@ pause -1
   (defparameter *dog-stddev-2* *1dog-stddev-2*)
   (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
   (defparameter *all-fits* *1all-fits*))
-#+nil
-(defparameter *all-fits* (append *all-fits* *1all-fits*))
+
 
 #+nil
 (progn
   (defparameter *all-fits* nil)
- (loop for i in '("" "b" "c") do
+ (loop for i in '("" "b" "c" "d") do
       (load 
        (format nil "/home/martin/0316/cl-gaussfit/sicher/store-centro4~a.lisp" i))
       (format t "len~a~%" (list (length *all-fits*) (length *1all-fits*)))
@@ -362,36 +361,38 @@ pause -1
 
 
 #+nil
-(progn ;; create high res image
-  (let* ((nn (length *all-fits*))
-	 (step (1- nn))
-	(ims
-	 (progn ;loop for ky from 0 below 6 collect
-	  (loop for kk from 0 below (- nn step) by step collect
-	       (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
-		 (let* ((sc 30)
-			(h (* sc hh))
-			(w (* sc ww))
-			(ar (make-array (list h w) :element-type 'single-float
-					:initial-element 0f0)))
-		   (loop for e in (subseq *all-fits* kk (+ kk step)) do
-			(loop for f in e do
-			     (when f
-			       (destructuring-bind (fnorm val (ii jj) x+err) f
-				 (destructuring-bind ((x dx) (y dy) 
-						      (a da) (b db) (s ds)) x+err
-				   (when (and dx
-					  (< dx .3))
-				     (incf 
-				      (aref ar 
-					    (min (1- h) 
-						 (max 0 
-						      (round (* sc (+ jj y -2)))))
-					    (min (1- w) 
-						 (max 0 
-						      (round (* sc (+ ii x -2)))))))))))))
-		   ar))))))
-   (write-fits "/dev/shm/high.fits" (img-list->stack ims))))
+(time
+ (progn ;; create high res image
+   (let* ((nn (length *all-fits*))
+	  (step (1- nn))
+	  (ims
+	   (progn		   ;loop for ky from 0 below 6 collect
+	     (loop for kk from 0 below (- nn step) by step collect
+		  (destructuring-bind (zz hh ww) (array-dimensions *imgs*)
+		    (let* ((sc 20)
+			   (h (* sc hh))
+			   (w (* sc ww))
+			   (ar (make-array (list h w) :element-type 'single-float
+					   :initial-element 0f0)))
+		      (loop for e in (subseq *all-fits* kk (+ kk step)) do
+			   (loop for f in e do
+				(when f
+				  (destructuring-bind (fnorm val (ii jj) x+err) f
+				    (destructuring-bind ((x dx) (y dy) 
+							 (a da) (b db) (s ds)) x+err
+				      (when (and dx
+						 (< dx .4))
+					(incf 
+					 (aref ar 
+					       (min (1- h) 
+						    (max 0 
+							 (round (* sc (+ jj y -2)))))
+					       (min (1- w) 
+						    (max 0 
+							 (round (* sc (+ ii x -2))))))
+					 (coerce a 'single-float))))))))
+		      ar))))))
+     (write-fits "/dev/shm/high.fits" (img-list->stack ims)))))
 
 
 #+nil

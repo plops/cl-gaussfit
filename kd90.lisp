@@ -31,12 +31,14 @@
 (defstruct node
   (cutdim (required-argument :cutdim) :type axis)
   (cutval (required-argument :cutval) :type single-float)
+  (father (required-argument :father) :type node)
   (loson (required-argument :loson) :type (or node leaf))
   (hison (required-argument :hison) :type (or node leaf)))
 
 (defstruct kd-tree
   (root nil :type (or null node))
   (points (required-argument :points) :type (simple-array vec 1))
+  (bucketptr (required-argument :bucketptr) :type (simple-array leaf 1))
   (perm (required-argument :perm) :type (simple-array array-index-t 1)))
 
 (defparameter *points* (make-array 0 :element-type 'vec))
@@ -139,7 +141,7 @@
 (defun build (l u)
   (declare (type array-index-t l u)
 	   (values (or node leaf) &optional))
-  (let ((points-in-bucket 14)) ;; change this back to somewhere like 14 for better performance
+  (let ((points-in-bucket 2)) ;; change this back to somewhere like 14 for better performance
    (if (<= (1+ (- u l)) (1- points-in-bucket))
        (make-leaf :lopt l
 		  :hipt u)
