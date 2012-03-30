@@ -415,13 +415,13 @@ pause -1
 (time
  (progn ;; build a kdtree of the points
    (let* ((points nil))
-     (loop for e in *all-fits* do
+     (loop for e in (subseq *all-fits* 0) do
 	  (loop for f in e do
 	       (when f
 		 (destructuring-bind (fnorm val (i j) x+err) f
 		   (destructuring-bind ((x dx) (y dy) 
 					(a da) (b db) (s ds)) x+err
-		     (when (and dx (< dx .3f0))
+		     (when (and dx (< dx .5f0))
 		       (push (make-array 2 :element-type 'single-float
 					 :initial-contents
 					 (mapcar #'(lambda (x) (coerce x 'single-float))
@@ -433,6 +433,9 @@ pause -1
        (defparameter *point-a* point-a)
        (time (defparameter *tree* (build-new-tree point-a)))
        (length point-a)))))
+
+#+nil
+(length *all-fits*)
 
 #+nil
 (length

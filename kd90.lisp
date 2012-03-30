@@ -89,14 +89,6 @@
 		dim j))))
     dim))
 
-(defun swap (a b)
-  (declare (type array-index-t a b)
-	   (values null &optional))
-  (let ((h (aref *perm* a)))
-    (setf (aref *perm* a) (aref *perm* b)
-	  (aref *perm* b) h))
-  nil)
-
 (defun select (tree l u m cutdim)
   (declare (type kd-tree tree)
 	   (type array-index-t l u m)
@@ -106,28 +98,32 @@
     (labels ((p (l) ;; accessor
 	       (declare (fixnum l)
 			(values single-float &optional))
-	       (px l cutdim)))
+	       (px l cutdim))
+	     (swap (a b)
+	       (declare (type array-index-t a b))
+	       (with-slots (perm) tree
+		 (rotatef (aref perm a) (aref perm b)))
+	       (values)))
      (loop
 	(if (<= u (1+ l))
 	    (progn
 	      (when (and (= u (1+ l))
 			 (< (p u) (p l)))
 		(swap u l))
-	      (return-from select (aref *perm* m)))
+	      (return-from select (aref perm m)))
 	    (let ((mid (floor (+ u l) 2)))
 	      (swap mid (1+ l))
 	      (labels ((enforce< (l u)
-			 (declare (type fixnum l u)
-				  (values null &optional))
+			 (declare (type fixnum l u))
 			 (when (< (p u) (p l)) (swap u l))
-			 nil))
+			 (values)))
 		;; rearrange for p[l]<=p[l+1]<=p[u]
 		(enforce< l u)
 		(enforce< (1+ l) u)
 		(enforce< l (1+ l)))
 	      (let* ((i (1+ l))
 		     (j u)
-		     (ia (aref *perm* i))
+		     (ia (aref perm i))
 		     (a (p i)))
 		(declare (type fixnum i j))
 		(loop ;; scan up and down, put big elements right, small
@@ -136,8 +132,8 @@
 		   (loop do (decf j) while (< a (p j)))
 		   (when (< j i) (return))
 		   (swap i j))
-		(setf (aref *perm* (1+ l)) (aref *perm* j)
-		      (aref *perm* j) ia)
+		(setf (aref perm (1+ l)) (aref perm j)
+		      (aref perm j) ia)
 		(when (<= m j) (setf u (1- j)))
 		(when (<= j m) (setf l i)))))))))
 
@@ -210,9 +206,6 @@
 	  (kd-tree-bucketptr tree) (fill-bucketptr tree))
     (fill-fathers tree) 
     tree))
-#+nil
-(let* ((n 300))
-  (defparameter *tree* (build-new-tree (make-random-points n))))
 
 (defun distance2 (tree i j)
   (declare (type kd-tree tree)
@@ -228,58 +221,77 @@
 	 (incf sum v2)))
      sum)))
 
-(defun nearest-neighbour-top-down (target kd-tree)
-   (declare (type array-index-t target)
-	    (type kd-tree kd-tree)
-	    (values array-index-t single-float &optional))
-   (with-slots (perm points root)
-       kd-tree
-     (let* ((nndist2 1f20)
-	    (nearest 0))
-       (labels ((rec (node)
-		  (declare (type (or leaf node) node))
-		  (etypecase node
-		    ;; sequential search in the bucket of the leaf
-		    (leaf (with-slots (lopt hipt)
-			      node
-			    (loop for i from lopt upto hipt do
-				 (let ((d (distance2 kd-tree i target)))
-				   (when (< d nndist2)
-				     (setf nndist2 d
-					   nearest (aref perm i)))))
-			    (return-from rec nil)))
-		    ;; search in the closer son, if nothing there,
-		    ;; search in farther son as well
-		    (node (with-slots (cutval cutdim loson hison)
-			      node
-			    (let* ((x (px target cutdim))
-				   (diff (- x cutval)))
-			      (if (< diff 0f0)
-				  (progn (rec loson)
-					 (when (< (expt diff 2) nndist2) ;(< cutval (+ x dist))
-					   (rec hison)))
-				  (progn (rec hison)
-					 (when (< (expt diff 2) nndist2) ;(< (- x dist) cutval)
-					   (rec loson))))))))))
-	 (rec root))
-       (values nearest nndist2))))
+(defmacro with-rnn (&body body)
+  `(labels ((rnn (node) ;; nndist2, nntarget and nnptnum are defined outside
+	      (declare (type (or leaf node) node))
+	      (etypecase node
+		;; sequential search in the bucket of the leaf
+		(leaf (with-slots (lopt hipt)
+			  node
+			(loop for i from lopt upto hipt do
+			 (let ((d (distance2 tree i nntarget)))
+			   (when (< d nndist2)
+			     (setf nndist2 d
+				   nnptnum (aref perm i)))))
+		    (return-from rnn nil)))
+	    ;; search in the closer son, if nothing there,
+	    ;; search in farther son as well
+	    (node (with-slots (cutval cutdim loson hison)
+		      node
+		    (let* ((x (px nntarget cutdim))
+			   (diff (- x cutval))
+			   (diff2 (expt diff 2)))
+		      (if (< diff 0f0)
+			  (progn (rnn loson)
+				 (when (< diff2 nndist2)
+				   (rnn hison)))
+			  (progn (rnn hison)
+				 (when (< diff2 nndist2)
+				   (rnn loson))))))))))
+     ,@body))
 
-(defun nearest-neighbour-bottom-up (target kd-tree)
-   (declare (type array-index-t target)
-	    (type kd-tree kd-tree)
-;x	    (values array-index-t single-float &optional)
-	    )
-   (with-slots (perm points root bucketptr) kd-tree
-     (let* ((nndist2 1f20)
-	    (nearest 0)
-	    (p (aref bucketptr target))
-	    (lastp p))
-       (nearest-neighbour-top-down p kd-tree)
-       (loop named trav do
-	    (setf lastp p
-		  p (slot-value p 'father))
-	    (unless p
-	      (return-from trav))))))
+(defun nearest-neighbour-top-down (tree target)
+  (declare (type array-index-t target)
+	   (type kd-tree tree)
+	   (values array-index-t single-float &optional))
+  (with-slots (perm points root) tree
+    (let ((nntarget target)
+	  (nndist2 1f20)
+	  (nnptnum 0))
+      (with-rnn 
+	(rnn root))
+      (values nnptnum nndist2))))
+
+(defun nearest-neighbour-bottom-up (tree target)
+  (declare (type array-index-t target)
+	   (type kd-tree tree)
+	   (values array-index-t single-float &optional))
+  (let ((nntarget target)
+	(nndist2 1f20)
+	(nnptnum 0))
+    (with-slots (perm points root bucketptr) tree
+      (with-rnn
+	(let* ((p (aref bucketptr target))
+	       (old-p p))
+	  (rnn p)
+	  (loop named trav do
+	       (setf old-p p
+		     p (slot-value p 'father))
+	       (unless p
+		 (return-from trav))
+	       (with-slots (cutdim cutval loson hison) p
+		 (let ((diff2 (expt (- (px target cutdim)
+				       cutval)
+				    2)))
+		   (when (<= diff2 nndist2)
+		     (if (eq old-p loson)
+			 (rnn hison)
+			 (rnn loson)))
+		   (when (ball2-in-bounds (slot-value p 'bounds)
+					  target
+					  nndist2)
+		     (return-from trav)))))
+	  (values nnptnum nndist2))))))
 
 
 
