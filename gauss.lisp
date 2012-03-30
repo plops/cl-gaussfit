@@ -253,7 +253,7 @@ pause -1
 
 #+nil
 (time
- (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4c.lisp"))
+ (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4+a+b+c16000-20000+d20000-29999.lisp"))
 
 #+nil
 (progn
@@ -360,6 +360,7 @@ pause -1
      (write-fits "/dev/shm/fit-calc.fits" (img-list->stack res)))))
 
 
+
 #+nil
 (time
  (progn ;; create high res image
@@ -390,7 +391,7 @@ pause -1
 					       (min (1- w) 
 						    (max 0 
 							 (round (* sc (+ ii x -2))))))
-					 (coerce a 'single-float))))))))
+					 )))))))
 		      ar))))))
      (write-fits "/dev/shm/high.fits" (img-list->stack ims)))))
 
@@ -414,13 +415,13 @@ pause -1
 (time
  (progn ;; build a kdtree of the points
    (let* ((points nil))
-     (loop for e in *1all-fits* do
+     (loop for e in *all-fits* do
 	  (loop for f in e do
 	       (when f
 		 (destructuring-bind (fnorm val (i j) x+err) f
 		   (destructuring-bind ((x dx) (y dy) 
 					(a da) (b db) (s ds)) x+err
-		     (when (< .6 s 1)
+		     (when (and dx (< dx .3f0))
 		       (push (make-array 2 :element-type 'single-float
 					 :initial-contents
 					 (mapcar #'(lambda (x) (coerce x 'single-float))
@@ -432,11 +433,10 @@ pause -1
        (defparameter *point-a* point-a)
        (time (defparameter *tree* (build-new-tree point-a)))
        (length point-a)))))
-;; 0.2s build tree 28870 
-;; 0.75s all nn
+
 #+nil
 (length
- (locate-points-in-circle-around-target 300 10f0 *tree*))
+ (locate-points-in-circle-around-target 100 9f0 *tree*))
 
 #+nil
 (time
