@@ -257,6 +257,7 @@ pause -1
 
 #+nil
 (progn
+  (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4+a+b+c16000-20000+d20000-29999.lisp")
   (defparameter *dog-mean-2* *1dog-mean-2*)
   (defparameter *dog-stddev-2* *1dog-stddev-2*)
   (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
@@ -438,6 +439,15 @@ pause -1
 (length *all-fits*)
 
 #+nil
+(reduce #'max
+	(mapcar #'(lambda (x) (second (multiple-value-list
+				  (kdtree::nearest-neighbour-top-down *tree* x))))
+		(loop for i below 100000 collect (random 100000))))
+
+#+nil
+(kdtree::nearest-neighbour-top-down *tree* 10)
+
+#+nil
 (length
  (locate-points-in-circle-around-target 100 9f0 *tree*))
 
@@ -448,7 +458,7 @@ pause -1
 	  (dists (make-array n :element-type 'single-float)))
      (dotimes (i n)
        (multiple-value-bind (p d)
-	   (nearest-neighbour i *tree*)
+	   (kdtree::nearest-neighbour-top-down *tree* i)
 	 (setf (aref dists i) d)))
      (defparameter *dists* dists))))
  

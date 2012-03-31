@@ -1,4 +1,6 @@
-;; the paper I read for this is 1990bentley_kdtree-c++.pdf
+;; the paper I read for this is 1990bentley_kdtree-c++.pdf and
+;; friedman 1977, a kd-tree works for other distance measures than
+;; euklidean (as opposed to delaunay)
 #.(require :alexandria)
 (declaim (optimize (speed 0) (safety 3) (debug 3)))
 
@@ -221,8 +223,50 @@
 	 (incf sum v2)))
      sum)))
 
-(defmacro with-rnn (&body body)
-  `(labels ((rnn (node) ;; nndist2, nntarget and nnptnum are defined outside
+(defun gen-traverse ()
+  `(with-slots (cutval cutdim loson hison)
+       node
+     (let* ((x (px nntarget cutdim))
+	    (diff (- x cutval))
+	    (diff2 (expt diff 2)))
+       (if (< diff 0f0)
+	   (progn (rnn loson)
+		  ;; only check on the other side, when
+		  ;; ball of current nndist centered at
+		  ;; query record overlaps into the
+		  ;; other side
+		  (when (< diff2 nndist2)
+		    (rnn hison)))
+	    ;; search in the closer son, if nothing there,
+	    ;; search in farther son as well
+	   (progn (rnn hison)
+		  (when (< diff2 nndist2)
+		    (rnn loson)))))))
+
+(defmacro with-saved-bound (bound &body body)
+  `(let ((temp (aref ,bound cutdim)))
+     (setf (aref ,bound cutdim) cutval)
+     ,@body
+     (setf (aref ,bound cutdim) temp)))
+
+(defun gen-traverse-with-bounds ()
+  `(with-slots (cutval cutdim loson hison)
+       node
+     (let* ((x (px nntarget cutdim))
+	    (diff (- x cutval))
+	    (diff2 (expt diff 2)))
+       (if (< diff 0f0)
+	   (progn (with-saved-bound b+ (rnn loson))
+		  (when (< diff2 nndist2)
+		    (with-saved-bound b- (rnn hison))))
+	   (progn (with-saved-bound b- (rnn hison))
+		  (when (< diff2 nndist2)
+		    (with-saved-bound b+ (rnn loson))))))))
+
+(defmacro with-rnn ((&key bounds) &body body)
+  ;; nndist2, nntarget and nnptnum are defined outside
+  ;; if bounds is t b+ and b- must also be declared
+  `(labels ((rnn (node) 
 	      (declare (type (or leaf node) node))
 	      (etypecase node
 		;; sequential search in the bucket of the leaf
@@ -234,20 +278,9 @@
 			     (setf nndist2 d
 				   nnptnum (aref perm i)))))
 		    (return-from rnn nil)))
-	    ;; search in the closer son, if nothing there,
-	    ;; search in farther son as well
-	    (node (with-slots (cutval cutdim loson hison)
-		      node
-		    (let* ((x (px nntarget cutdim))
-			   (diff (- x cutval))
-			   (diff2 (expt diff 2)))
-		      (if (< diff 0f0)
-			  (progn (rnn loson)
-				 (when (< diff2 nndist2)
-				   (rnn hison)))
-			  (progn (rnn hison)
-				 (when (< diff2 nndist2)
-				   (rnn loson))))))))))
+	   	(node ,(if bounds
+			   (gen-traverse-with-bounds)
+			   (gen-traverse))))))
      ,@body))
 
 (defun nearest-neighbour-top-down (tree target)
@@ -258,7 +291,7 @@
     (let ((nntarget target)
 	  (nndist2 1f20)
 	  (nnptnum 0))
-      (with-rnn 
+      (with-rnn ()
 	(rnn root))
       (values nnptnum nndist2))))
 
@@ -268,30 +301,43 @@
 	   (values array-index-t single-float &optional))
   (let ((nntarget target)
 	(nndist2 1f20)
-	(nnptnum 0))
+	(nnptnum 0)
+	(b+ (make-array +dim+ :element-type 'single-float
+			:initial-element 1f20))
+	(b- (make-array +dim+ :element-type 'single-float
+			:initial-element -1f20)))
     (with-slots (perm points root bucketptr) tree
-      (with-rnn
-	(let* ((p (aref bucketptr target))
-	       (old-p p))
-	  (rnn p)
-	  (loop named trav do
-	       (setf old-p p
-		     p (slot-value p 'father))
-	       (unless p
-		 (return-from trav))
-	       (with-slots (cutdim cutval loson hison) p
-		 (let ((diff2 (expt (- (px target cutdim)
-				       cutval)
-				    2)))
-		   (when (<= diff2 nndist2)
-		     (if (eq old-p loson)
-			 (rnn hison)
-			 (rnn loson)))
-		   (when (ball2-in-bounds (slot-value p 'bounds)
-					  target
-					  nndist2)
-		     (return-from trav)))))
-	  (values nnptnum nndist2))))))
+      (labels ((ball-in-bounds (targ r2)
+		 (let ((r (sqrt r2)))
+		   (loop for dim below +dim+ do
+			(when (or (<= (- (px targ dim) 
+					 (aref b- dim))
+				      r)
+				  (<= (- (px targ dim)
+					 (aref b+ dim))
+				      r))
+			  (return-from ball-in-bounds nil))))
+		 t))
+	(with-rnn (:bounds t)
+	  (let* ((p (aref bucketptr target))
+		 (old-p p))
+	    (rnn p)
+	    (loop named trav do
+		 (setf old-p p
+		       p (slot-value p 'father))
+		 (unless p
+		   (return-from trav))
+		 (with-slots (cutdim cutval loson hison) p
+		   (let ((diff2 (expt (- (px target cutdim)
+					 cutval)
+				      2)))
+		     (when (<= diff2 nndist2)
+		       (if (eq old-p loson)
+			   (rnn hison)
+			   (rnn loson)))
+		     (when (ball-in-bounds target nndist2)
+		       (return-from trav)))))
+	    (values nnptnum nndist2)))))))
 
 
 
