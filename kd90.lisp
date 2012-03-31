@@ -34,7 +34,11 @@
   (cutval (required-argument :cutval) :type single-float)
   (loson (required-argument :loson) :type (or node leaf))
   (hison (required-argument :hison) :type (or node leaf))
-  (father nil :type (or null node)))
+  (father nil :type (or null node))
+  (bounds- (make-array +dim+ :element-type 'single-float)
+	   :type (simple-array single-float 1))
+  (bounds+ (make-array +dim+ :element-type 'single-float)
+	   :type (simple-array single-float 1)))
 
 (defstruct leaf
   (lopt (required-argument :lopt) :type array-index-t)
@@ -192,6 +196,39 @@
       (rec root nil))
     tree))
 
+(defun fill-bounds (tree)
+  (declare (type kd-tree tree))
+  (with-slots (root points perm) tree
+    (labels ((make-bounds (ls)
+	       (make-array +dim+ :element-type 'single-float
+			   :initial-contents ls))
+	     (rec (node b- b+)
+	       (declare (type (or leaf node) node)
+			(type (simple-array single-float 1) b- b+))
+	       (etypecase node
+		 (leaf nil)
+		 (node (setf (node-bounds+ node) b+
+			     (node-bounds- node) b-)
+		       (with-slots (loson hison) node
+			 (rec loson
+			      b- 
+			      (make-bounds 
+			       (loop for k below +dim+ collect
+				    (if (= k (node-cutdim node))
+					(node-cutval node)
+					(aref (node-bounds+ node) k)))))
+			 (rec hison
+			      (make-bounds 
+			       (loop for k below +dim+ collect
+				    (if (= k (node-cutdim node))
+					(node-cutval node)
+					(aref (node-bounds- node) k))))
+			      b+))))))
+      (rec root 
+	   (make-bounds (loop for k below +dim+ collect -1f20))
+	   (make-bounds (loop for k below +dim+ collect 1f20))))
+    tree))
+
 (defun build-new-tree (points)
   (declare (type (simple-array vec 1) points)
 	   (values kd-tree &optional))
@@ -206,6 +243,7 @@
 	 (root (build tree 0 (1- n))))
     (setf (kd-tree-root tree) root
 	  (kd-tree-bucketptr tree) (fill-bucketptr tree))
+    (fill-bounds tree)
     (fill-fathers tree) 
     tree))
 
@@ -223,8 +261,21 @@
 	 (incf sum v2)))
      sum)))
 
-(defun gen-traverse ()
-  `(with-slots (cutval cutdim loson hison)
+(defmacro with-rnn (&body body)
+  ;; nndist2, nntarget and nnptnum are defined outside
+  `(labels ((rnn (node) 
+	      (declare (type (or leaf node) node))
+	      (etypecase node
+		;; sequential search in the bucket of the leaf
+		(leaf (with-slots (lopt hipt)
+			  node
+			(loop for i from lopt upto hipt do
+			 (let ((d (distance2 tree i nntarget)))
+			   (when (< d nndist2)
+			     (setf nndist2 d
+				   nnptnum (aref perm i)))))
+		    (return-from rnn nil)))
+	   	(node (with-slots (cutval cutdim loson hison)
        node
      (let* ((x (px nntarget cutdim))
 	    (diff (- x cutval))
@@ -241,46 +292,7 @@
 	    ;; search in farther son as well
 	   (progn (rnn hison)
 		  (when (< diff2 nndist2)
-		    (rnn loson)))))))
-
-(defmacro with-saved-bound (bound &body body)
-  `(let ((temp (aref ,bound cutdim)))
-     (setf (aref ,bound cutdim) cutval)
-     ,@body
-     (setf (aref ,bound cutdim) temp)))
-
-(defun gen-traverse-with-bounds ()
-  `(with-slots (cutval cutdim loson hison)
-       node
-     (let* ((x (px nntarget cutdim))
-	    (diff (- x cutval))
-	    (diff2 (expt diff 2)))
-       (if (< diff 0f0)
-	   (progn (with-saved-bound b+ (rnn loson))
-		  (when (< diff2 nndist2)
-		    (with-saved-bound b- (rnn hison))))
-	   (progn (with-saved-bound b- (rnn hison))
-		  (when (< diff2 nndist2)
-		    (with-saved-bound b+ (rnn loson))))))))
-
-(defmacro with-rnn ((&key bounds) &body body)
-  ;; nndist2, nntarget and nnptnum are defined outside
-  ;; if bounds is t b+ and b- must also be declared
-  `(labels ((rnn (node) 
-	      (declare (type (or leaf node) node))
-	      (etypecase node
-		;; sequential search in the bucket of the leaf
-		(leaf (with-slots (lopt hipt)
-			  node
-			(loop for i from lopt upto hipt do
-			 (let ((d (distance2 tree i nntarget)))
-			   (when (< d nndist2)
-			     (setf nndist2 d
-				   nnptnum (aref perm i)))))
-		    (return-from rnn nil)))
-	   	(node ,(if bounds
-			   (gen-traverse-with-bounds)
-			   (gen-traverse))))))
+		    (rnn loson))))))))))
      ,@body))
 
 (defun nearest-neighbour-top-down (tree target)
@@ -291,7 +303,7 @@
     (let ((nntarget target)
 	  (nndist2 1f20)
 	  (nnptnum 0))
-      (with-rnn ()
+      (with-rnn
 	(rnn root))
       (values nnptnum nndist2))))
 
@@ -301,43 +313,39 @@
 	   (values array-index-t single-float &optional))
   (let ((nntarget target)
 	(nndist2 1f20)
-	(nnptnum 0)
-	(b+ (make-array +dim+ :element-type 'single-float
-			:initial-element 1f20))
-	(b- (make-array +dim+ :element-type 'single-float
-			:initial-element -1f20)))
+	(nnptnum 0))
     (with-slots (perm points root bucketptr) tree
-      (labels ((ball-in-bounds (targ r2)
-		 (let ((r (sqrt r2)))
-		   (loop for dim below +dim+ do
-			(when (or (<= (- (px targ dim) 
-					 (aref b- dim))
-				      r)
-				  (<= (- (px targ dim)
-					 (aref b+ dim))
-				      r))
-			  (return-from ball-in-bounds nil))))
-		 t))
-	(with-rnn (:bounds t)
-	  (let* ((p (aref bucketptr target))
-		 (old-p p))
-	    (rnn p)
-	    (loop named trav do
-		 (setf old-p p
-		       p (slot-value p 'father))
-		 (unless p
-		   (return-from trav))
-		 (with-slots (cutdim cutval loson hison) p
-		   (let ((diff2 (expt (- (px target cutdim)
-					 cutval)
-				      2)))
-		     (when (<= diff2 nndist2)
-		       (if (eq old-p loson)
-			   (rnn hison)
-			   (rnn loson)))
-		     (when (ball-in-bounds target nndist2)
-		       (return-from trav)))))
-	    (values nnptnum nndist2)))))))
+      (labels ((ball-in-bounds (node targ rad)
+		 (declare (type node node)
+			  (type array-index-t targ)
+			  (type single-float rad))
+		 (with-slots (bounds- bounds+) node
+		   (loop for k below +dim+ do
+			(let ((x (px targ k)))
+			  (when (or (<= (- x (aref bounds- k)) rad)
+				    (<= (- (aref bounds+ k) x) rad))
+			    (return-from ball-in-bounds nil))))
+		   t)))
+	(with-rnn
+	 (let* ((p (aref bucketptr target))
+		(old-p p))
+	   (rnn p)
+	   (loop named trav do
+		(setf old-p p
+		      p (slot-value p 'father))
+		(unless p
+		  (return-from trav))
+		(with-slots (cutdim cutval loson hison) p
+		  (let ((diff2 (expt (- (px target cutdim)
+					cutval)
+				     2)))
+		    (when (<= diff2 nndist2)
+		      (if (eq old-p loson)
+			  (rnn hison)
+			  (rnn loson)))
+		    (when (ball-in-bounds p target nndist2)
+		      (return-from trav)))))
+	   (values nnptnum nndist2)))))))
 
 
 
