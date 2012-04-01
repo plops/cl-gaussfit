@@ -439,10 +439,8 @@ pause -1
 (length *all-fits*)
 
 #+nil
-(reduce #'max
-	(mapcar #'(lambda (x) (second (multiple-value-list
-				  (kdtree::nearest-neighbour-top-down *tree* x))))
-		(loop for i below 100000 collect (random 100000))))
+(multiple-value-list
+ (kdtree::nearest-neighbour-bottom-up *tree* 1000))
 
 #+nil
 (kdtree::nearest-neighbour-top-down *tree* 10)
@@ -458,10 +456,13 @@ pause -1
 	  (dists (make-array n :element-type 'single-float)))
      (dotimes (i n)
        (multiple-value-bind (p d)
-	   (kdtree::nearest-neighbour-top-down *tree* i)
+	   (kdtree::nearest-neighbour-bottom-up *tree* i)
 	 (setf (aref dists i) d)))
      (defparameter *dists* dists))))
  
+#+nil
+(kdtree::locate-points-in-circle-around-target 1000 .3 *tree*)
+
 #+nil
 (progn ;; create histogram of nearest neighbour distances 
   (let* ((n 12800)
