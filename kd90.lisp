@@ -443,6 +443,9 @@
 					 (rnn loson))))))))))
        (rnn root)
        (reverse res)))))
+
+
+
 #+nil
 (let* ((n 30000))
   (time (defparameter *tree* (build-new-tree (make-random-points n))))

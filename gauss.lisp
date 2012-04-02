@@ -445,14 +445,37 @@ pause -1
        (length point-a)))))
 
 #+nil
-(kdtree::locate-points-in-circle-around-point
- *tree* 
- (make-array 2 :element-type 'single-float
-	     :initial-contents (list 52.65 (- 64 60.2)))
- 2f0)
+(defparameter *close-points*
+  (kdtree::locate-points-in-circle-around-point
+   gauss::*tree* 
+   (make-array 2 :element-type 'single-float
+	       :initial-contents (list 52.65 (- 64 60.2)))
+   .5f0))
 ;; the center of a single molecule in the data, with sc=20: 1053 1204 radius=9
 ;; in camera pixels: 52.65 60.2 radius .5
 ;; actually the fits image is displayed upside down, so center_y = (- 64 60.2)
+#+nil
+(defparameter *close-points-meta*
+  (sort 
+   (loop for e in *close-points* collect
+	(aref *point-meta-a* e))
+   #'<
+   :key #'first))
+
+#+nil
+(progn
+ (with-open-file (s "/dev/shm/o.dat" :direction :output
+		    :if-exists :supersede
+		    :if-does-not-exist :create)
+   (format s "~{~{~f ~f~}~%~}~%"
+	   (loop for  (slice event ((x dx) (y dy) 
+				    (a da) (b db) (s ds)))
+	      in *close-points-meta* collect
+		(list slice a))))
+ (with-open-file (s "/dev/shm/o.gp" :direction :output
+		    :if-exists :supersede
+		    :if-does-not-exist :create)
+   (format s "plot \"/dev/shm/o.dat\" u 1:2 w lp ; pause -1")))
 
 #+nil
 (defparameter *bla*
