@@ -1,3 +1,7 @@
+;; 1987 stetson daophot is a good publication: it explains how to fit
+;; integral gaussian for pixelized sensor and discusses many more
+;; interesting things, i haven't thought about
+
 #+nil
 (progn
   (loop for i in '("utils" "gauss-fit" "gauss-blur"
