@@ -256,12 +256,13 @@ pause -1
  (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4+a+b+c16000-20000+d20000-29999.lisp"))
 
 #+nil
-(progn
-  (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4+a+b+c16000-20000+d20000-29999.lisp")
-  (defparameter *dog-mean-2* *1dog-mean-2*)
-  (defparameter *dog-stddev-2* *1dog-stddev-2*)
-  (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
-  (defparameter *all-fits* *1all-fits*))
+(time
+ (progn
+   (load "/home/martin/0316/cl-gaussfit/sicher/store-centro4+a+b+c16000-20000+d20000-29999.lisp")
+   (defparameter *dog-mean-2* *1dog-mean-2*)
+   (defparameter *dog-stddev-2* *1dog-stddev-2*)
+   (defparameter *blur-big-ma-2* *1blur-big-ma-2*)
+   (defparameter *all-fits* *1all-fits*)))
 
 
 #+nil
@@ -415,9 +416,10 @@ pause -1
 #+nil
 (time
  (progn ;; build a kdtree of the points
-   (let* ((points nil))
-     (loop for e in (subseq *all-fits* 0) do
-	  (loop for f in e do
+   (let* ((points nil)
+	  (points-meta nil))
+     (loop for e in (subseq *all-fits* 0) and slice from 0 do
+	  (loop for f in e and event from 0 do
 	       (when f
 		 (destructuring-bind (fnorm val (i j) x+err) f
 		   (destructuring-bind ((x dx) (y dy) 
@@ -427,13 +429,34 @@ pause -1
 					 :initial-contents
 					 (mapcar #'(lambda (x) (coerce x 'single-float))
 						 (list (+ i x -2) (+ j y -2))))
-			     points)))))))
+			     points)
+		       (push (list slice event x+err)
+			     points-meta)))))))
      (let ((point-a (make-array (length points)
 				:element-type 'vec
-				:initial-contents points)))
+				:initial-contents (reverse points)))
+	   (point-meta-a (make-array (length points-meta)
+				     :element-type 'list
+				     :initial-contents (reverse points-meta))))
        (defparameter *point-a* point-a)
+       (defparameter *point-meta-a* point-meta-a)
+       
        (time (defparameter *tree* (build-new-tree point-a)))
        (length point-a)))))
+
+#+nil
+(kdtree::locate-points-in-circle-around-point
+ *tree* 
+ (make-array 2 :element-type 'single-float
+	     :initial-contents (list 52.65 (- 64 60.2)))
+ 2f0)
+;; the center of a single molecule in the data, with sc=20: 1053 1204 radius=9
+;; in camera pixels: 52.65 60.2 radius .5
+;; actually the fits image is displayed upside down, so center_y = (- 64 60.2)
+
+#+nil
+(defparameter *bla*
+ (sort *point-meta-a* #'> :key #'(lambda (x) (first (fifth (third x))))))
 
 #+nil
 (length *all-fits*)
